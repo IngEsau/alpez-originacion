@@ -1,28 +1,24 @@
 import { ClipboardCheck, GitBranch, LayoutDashboard, LogOut, Menu, Play } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../shared/components/Button";
-import { destroyDemoSession, getDemoSession } from "../shared/lib/session";
 import { cx } from "../shared/lib/formatters";
+import { destroyDemoSession, getDemoSession } from "../shared/lib/session";
 
 const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
-  { label: "Iniciar originación", to: "/originacion/nueva", icon: Play },
   { label: "Solicitudes", to: "/solicitudes", icon: ClipboardCheck },
   { label: "Trazas", to: "/trazas", icon: GitBranch },
 ];
 
 const pageTitles: Array<{ match: (pathname: string) => boolean; title: string }> = [
   { match: (pathname) => pathname === "/dashboard", title: "Dashboard operativo" },
-  { match: (pathname) => pathname === "/originacion/nueva", title: "Nueva originación" },
-  { match: (pathname) => pathname.startsWith("/originacion/"), title: "Flujo de originación" },
   { match: (pathname) => pathname === "/solicitudes", title: "Solicitudes" },
-  { match: (pathname) => pathname === "/solicitudes/nueva", title: "Nueva solicitud" },
   { match: (pathname) => pathname.startsWith("/solicitudes/"), title: "Detalle de solicitud" },
   { match: (pathname) => pathname === "/trazas", title: "Trazas" },
   { match: (pathname) => pathname.startsWith("/trazas/"), title: "Detalle de traza" },
 ];
 
-export function AppLayout() {
+export function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const user = getDemoSession();
@@ -44,7 +40,7 @@ export function AppLayout() {
               </div>
               <div>
                 <p className="font-bold text-slate-950">ALPEZ</p>
-                <p className="text-xs text-slate-500">Originación</p>
+                <p className="text-xs text-slate-500">Dashboard</p>
               </div>
             </div>
           </div>
@@ -68,7 +64,16 @@ export function AppLayout() {
               );
             })}
           </nav>
-          <div className="border-t border-slate-200 p-4">
+          <div className="space-y-3 border-t border-slate-200 p-4">
+            <Button
+              className="w-full"
+              icon={<Play className="h-4 w-4" />}
+              type="button"
+              variant="secondary"
+              onClick={() => navigate("/originacion/iniciar")}
+            >
+              Iniciar originación
+            </Button>
             <div className="rounded-xl bg-slate-50 p-3">
               <p className="text-xs font-semibold text-slate-500">Ambiente</p>
               <p className="text-sm font-bold text-slate-950">Demo local</p>
@@ -85,7 +90,7 @@ export function AppLayout() {
             </button>
             <div>
               <p className="text-sm font-bold text-slate-950">{title}</p>
-              <p className="hidden text-xs text-slate-500 sm:block">ALPEZ Originación | Ambiente Demo</p>
+              <p className="hidden text-xs text-slate-500 sm:block">Monitoreo operativo | Ambiente Demo</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -95,7 +100,7 @@ export function AppLayout() {
               size="sm"
               type="button"
               variant="outline"
-              onClick={() => navigate("/originacion/nueva")}
+              onClick={() => navigate("/originacion/iniciar")}
             >
               Iniciar originación
             </Button>

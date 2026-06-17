@@ -9,6 +9,7 @@ export type TraceStep =
   | "ine_validacion_vigencia"
   | "ine_validacion_padron"
   | "knockouts"
+  | "cliente_existente"
   | "captura_datos"
   | "documentos"
   | "buro"
@@ -66,6 +67,13 @@ export interface IneInitialValidationResult {
 export interface KnockoutValidationResult {
   passed: boolean;
   reasons: string[];
+  status: "approved" | "rejected";
+  message: string;
+}
+
+export interface ExistingClientInitialValidationResult {
+  exists: boolean;
+  customer_id?: string;
   status: "approved" | "rejected";
   message: string;
 }

@@ -16,7 +16,7 @@ export function OriginacionStartPage() {
     setLoading(true);
     try {
       const trace = await createTrace({ person_type: personType });
-      navigate(`/originacion/${trace.trace_id}`);
+      navigate(`/originacion/${trace.trace_id}/ine`);
     } finally {
       setLoading(false);
     }
@@ -25,8 +25,8 @@ export function OriginacionStartPage() {
   return (
     <>
       <PageHeader
-        title="Nueva originación"
-        description="El proceso inicia con la carga y validación de INE."
+        title="Iniciar originación"
+        description="El proceso comienza con la carga y validación de INE."
       />
       <Card title="Tipo de persona" description="Selecciona el perfil inicial de la originación">
         <div className="grid gap-4 md:grid-cols-2">
@@ -55,7 +55,7 @@ export function OriginacionStartPage() {
         </div>
         <div className="mt-6">
           <Button icon={<IdCard className="h-4 w-4" />} loading={loading} type="button" onClick={start}>
-            Iniciar con carga de INE
+            Comenzar con carga de INE
           </Button>
         </div>
       </Card>

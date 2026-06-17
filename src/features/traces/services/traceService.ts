@@ -5,6 +5,7 @@ export {
   getTraces,
   getTracesStoreSnapshot,
   linkTraceApplication,
+  runExistingClientInitialValidation,
   runIneInitialValidation,
   runKnockoutsValidation,
   updateTraceIneUpload,

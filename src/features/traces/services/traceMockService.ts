@@ -1,6 +1,7 @@
 import type {
   AddTraceEventPayload,
   CreateTracePayload,
+  ExistingClientInitialValidationResult,
   IneInitialValidationResult,
   KnockoutValidationResult,
   Trace,
@@ -345,7 +346,32 @@ export async function runKnockoutsValidation(trace_id: string): Promise<Knockout
     status: result.passed ? "success" : "error",
     metadata: { ...result },
   });
-  await updateTraceStatus(trace_id, result.passed ? "running" : "rejected", result.passed ? "captura_datos" : "knockouts");
+  await updateTraceStatus(trace_id, result.passed ? "running" : "rejected", result.passed ? "cliente_existente" : "knockouts");
+  return result;
+}
+
+export async function runExistingClientInitialValidation(
+  trace_id: string,
+): Promise<ExistingClientInitialValidationResult> {
+  await wait();
+  const trace = readStore().find((item) => item.trace_id === trace_id);
+  if (!trace) throw new Error("Traza no encontrada.");
+  const exists = trace.trace_id.endsWith("0008");
+  const result: ExistingClientInitialValidationResult = {
+    exists,
+    customer_id: exists ? "CUS-DEMO-001" : undefined,
+    status: exists ? "rejected" : "approved",
+    message: exists ? "Prospecto detectado como cliente existente." : "No se encontró cliente existente.",
+  };
+
+  await addTraceEvent(trace_id, {
+    step: "cliente_existente",
+    title: result.exists ? "Cliente existente detectado" : "Cliente existente aprobado",
+    description: result.message,
+    status: result.exists ? "error" : "success",
+    metadata: { ...result },
+  });
+  await updateTraceStatus(trace_id, result.exists ? "rejected" : "running", result.exists ? "cliente_existente" : "captura_datos");
   return result;
 }
 
@@ -355,14 +381,14 @@ export async function linkTraceApplication(trace_id: string, application_id: str
   replaceTrace({
     ...trace,
     application_id,
-    current_step: "captura_datos",
+    current_step: "documentos",
     status: "running",
     updated_at: new Date().toISOString(),
   });
   return addTraceEvent(trace_id, {
-    step: "captura_datos",
-    title: "Solicitud ligada a traza",
-    description: `La solicitud ${application_id} quedó ligada al trace_id.`,
+    step: "documentos",
+    title: "Pre-solicitud ligada a traza",
+    description: `La pre-solicitud ${application_id} quedó ligada al trace_id y pasa a expediente documental.`,
     status: "success",
     metadata: { application_id },
   });

@@ -131,6 +131,7 @@ export const traceStepLabels: Record<TraceStep, string> = {
   ine_validacion_vigencia: "Validación vigencia INE",
   ine_validacion_padron: "Validación padrón",
   knockouts: "Knockouts",
+  cliente_existente: "Cliente existente",
   captura_datos: "Captura de datos",
   documentos: "Documentos",
   buro: "Buró",

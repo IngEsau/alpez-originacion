@@ -46,7 +46,7 @@ export function ApplicationsPage() {
         title="Solicitudes"
         description="Consulta y seguimiento de solicitudes de originación"
         actions={
-          <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => navigate("/originacion/nueva")}>
+          <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => navigate("/originacion/iniciar")}>
             Iniciar originación
           </Button>
         }
