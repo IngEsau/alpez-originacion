@@ -44,7 +44,7 @@ export interface Trace {
 }
 
 export interface CreateTracePayload {
-  person_type: PersonType;
+  person_type?: PersonType;
 }
 
 export interface AddTraceEventPayload {

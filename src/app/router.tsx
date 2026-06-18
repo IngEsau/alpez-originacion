@@ -3,6 +3,7 @@ import { AuthLayout } from "../layouts/AuthLayout";
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { OriginacionLayout } from "../layouts/OriginacionLayout";
 import { PublicPortalLayout } from "../layouts/PublicPortalLayout";
+import { SolicitudLayout } from "../layouts/SolicitudLayout";
 import { ApplicationsPage } from "../pages/ApplicationsPage";
 import { ApplicationDetailPage } from "../pages/ApplicationDetailPage";
 import { DashboardPage } from "../pages/DashboardPage";
@@ -13,6 +14,8 @@ import { NotFoundPage } from "../pages/NotFoundPage";
 import { OriginacionFlowPage } from "../pages/OriginacionFlowPage";
 import { OriginacionStartPage } from "../pages/OriginacionStartPage";
 import { PortalPage } from "../pages/PortalPage";
+import { SolicitudFlowPage } from "../pages/SolicitudFlowPage";
+import { SolicitudSuccessPage } from "../pages/SolicitudSuccessPage";
 import { TraceDetailPage } from "../pages/TraceDetailPage";
 import { TracesPage } from "../pages/TracesPage";
 import { hasDemoSession } from "../shared/lib/session";
@@ -30,6 +33,11 @@ export function AppRouter() {
     <Routes>
       <Route element={<PublicPortalLayout />}>
         <Route path="/" element={<PortalPage />} />
+      </Route>
+      <Route element={<SolicitudLayout />}>
+        <Route path="/solicitud" element={<SolicitudFlowPage />} />
+        <Route path="/solicitud/:flowId" element={<SolicitudFlowPage />} />
+        <Route path="/solicitud/:flowId/final" element={<SolicitudSuccessPage />} />
       </Route>
       <Route element={<PublicRoute />}>
         <Route path="/login" element={<LoginPage />} />

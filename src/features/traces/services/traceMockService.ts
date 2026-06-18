@@ -97,7 +97,7 @@ export async function createTrace(payload: CreateTracePayload): Promise<Trace> {
         description: "Se creó la traza y el proceso inicia con carga de INE.",
         status: "success",
         created_at: now,
-        metadata: { person_type: payload.person_type },
+        metadata: payload.person_type ? { person_type: payload.person_type } : undefined,
       },
     ],
   };
