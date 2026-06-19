@@ -12,6 +12,7 @@ export type TraceStep =
   | "cliente_existente"
   | "captura_datos"
   | "documentos"
+  | "sms"
   | "buro"
   | "listas"
   | "decision"

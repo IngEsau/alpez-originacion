@@ -134,6 +134,7 @@ export const traceStepLabels: Record<TraceStep, string> = {
   cliente_existente: "Cliente existente",
   captura_datos: "Captura de datos",
   documentos: "Documentos",
+  sms: "SMS",
   buro: "Buró",
   listas: "Listas",
   decision: "Decisión",

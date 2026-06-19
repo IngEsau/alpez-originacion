@@ -3,10 +3,13 @@ import {
   ArrowRight,
   Building2,
   Check,
+  Eye,
+  FileText,
   FileUp,
-  IdCard,
   Loader2,
-  Store,
+  MessageSquare,
+  RefreshCw,
+  Trash2,
   User,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -18,15 +21,19 @@ import {
   confirmIneReview,
   createSolicitudFlow,
   getSolicitudFlow,
+  removeDocumentFile,
   saveBasicData,
   saveBusinessData,
   saveDocumentFile,
   saveIneFile,
   saveRequestedAmount,
-  setDocumentStatus,
+  sendPhoneVerificationCode,
+  setCollateralChoice,
+  setGuarantorChoice,
   selectApplicantKind,
   submitSolicitudFlow,
   updateSolicitudStep,
+  verifyPhoneCode,
 } from "../features/solicitud/services/solicitudFlowService";
 import type {
   ApplicantKind,
@@ -36,14 +43,13 @@ import type {
   SolicitudFlowState,
   SolicitudStep,
   StoredFile,
-  PublicDocumentStatus,
 } from "../features/solicitud/types/solicitud.types";
 import { PUBLIC_DOCUMENT_STATUS_LABELS } from "../features/solicitud/types/solicitud.types";
 import { Button } from "../shared/components/Button";
 import { Input } from "../shared/components/Input";
 import { cx } from "../shared/lib/formatters";
 
-const TOTAL_STEPS = 10;
+const TOTAL_STEPS = 12;
 const AMOUNT_OPTIONS = [10000, 20000, 30000, 40000, 60000];
 
 const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number> = {
@@ -54,8 +60,9 @@ const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number
   datos_negocio: 6,
   monto: 7,
   documentos: 8,
-  autorizacion: 9,
-  resumen: 10,
+  phone_verification: 9,
+  autorizacion: 10,
+  resumen: 11,
 };
 
 function money(value: number): string {
@@ -66,12 +73,36 @@ function money(value: number): string {
   }).format(value);
 }
 
-function storedFileFromFile(file: File): StoredFile {
-  return {
-    name: file.name,
-    type: file.type || "archivo",
-    size: file.size,
-  };
+function storedFileFromFile(file: File): Promise<StoredFile> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        name: file.name,
+        type: file.type || "archivo",
+        size: file.size,
+        previewUrl: typeof reader.result === "string" ? reader.result : undefined,
+      });
+    };
+    reader.onerror = () => {
+      resolve({
+        name: file.name,
+        type: file.type || "imagen",
+        size: file.size,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function openStoredFile(file?: StoredFile): void {
+  if (file?.previewUrl) {
+    window.open(file.previewUrl, "_blank", "noopener,noreferrer");
+  }
+}
+
+function isImageFile(file?: StoredFile): boolean {
+  return Boolean(file?.type.startsWith("image/") && file.previewUrl);
 }
 
 function documentStatusClass(status: SolicitudDocument["status"]): string {
@@ -79,6 +110,49 @@ function documentStatusClass(status: SolicitudDocument["status"]): string {
   if (status === "review_pending") return "bg-sky-50 text-sky-700";
   if (status === "needs_change") return "bg-amber-50 text-amber-700";
   return "bg-slate-100 text-slate-600";
+}
+
+function getDocument(flow: SolicitudFlowState, id: string): SolicitudDocument | undefined {
+  return flow.documents.find((document) => document.id === id);
+}
+
+function visiblePhysicalDocuments(flow: SolicitudFlowState): SolicitudDocument[] {
+  return flow.documents.filter((document) => {
+    if ((document.id === "ine_aval" || document.id === "comprobante_domicilio_aval") && !flow.hasGuarantor) {
+      return false;
+    }
+    if (document.id === "garantia" && !flow.hasCollateral) return false;
+    return true;
+  });
+}
+
+function documentCounts(flow: SolicitudFlowState): { added: number; pending: number } {
+  const documents = flow.applicantKind === "physical" ? visiblePhysicalDocuments(flow) : flow.documents;
+  const added = documents.filter((document) => {
+    if (document.id === "ine_titular") return Boolean(flow.ineFront && flow.ineBack);
+    return document.status !== "missing";
+  }).length;
+  return { added, pending: documents.length - added };
+}
+
+function FilePreview({ file }: { file?: StoredFile }) {
+  if (!file) return null;
+  if (isImageFile(file)) {
+    return (
+      <img
+        alt={file.name}
+        className="mt-3 h-28 w-full rounded-[8px] border border-slate-200 object-cover"
+        src={file.previewUrl}
+      />
+    );
+  }
+
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-[8px] bg-slate-50 p-3 text-sm text-slate-600">
+      <FileText className="h-5 w-5 text-[#0F4C81]" />
+      <span>Archivo agregado</span>
+    </div>
+  );
 }
 
 function canContinueBasicData(flow: SolicitudFlowState): boolean {
@@ -256,6 +330,17 @@ export function SolicitudFlowPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [otherAmount, setOtherAmount] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSuccessMessage, setOtpSuccessMessage] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setResendCooldown((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
 
   useEffect(() => {
     if (!flowId) {
@@ -268,6 +353,7 @@ export function SolicitudFlowPage() {
     void getSolicitudFlow(flowId)
       .then((result) => {
         setFlow(result);
+        setOtpSuccessMessage(result?.phoneVerification.codeVerified ? "Celular verificado correctamente." : "");
         if (result?.requestedAmount && !AMOUNT_OPTIONS.includes(result.requestedAmount)) {
           setOtherAmount(String(result.requestedAmount));
         }
@@ -427,6 +513,7 @@ export function SolicitudFlowPage() {
               <FileUp className="mb-3 h-8 w-8 text-[#0F4C81]" />
               <span className="text-base font-bold text-slate-950">{item.title}</span>
               <span className="mt-2 text-sm text-slate-500">{item.file ? item.file.name : "Toca para agregar archivo"}</span>
+              <FilePreview file={item.file} />
               <input
                 accept="image/*,.pdf"
                 className="sr-only"
@@ -434,7 +521,9 @@ export function SolicitudFlowPage() {
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
-                  void runAction(() => saveIneFile(flow.flowId, item.key as "front" | "back", storedFileFromFile(file)));
+                  void storedFileFromFile(file).then((storedFile) =>
+                    runAction(() => saveIneFile(flow.flowId, item.key as "front" | "back", storedFile)),
+                  );
                 }}
               />
             </label>
@@ -639,14 +728,172 @@ export function SolicitudFlowPage() {
   }
 
   if (flow.currentStep === "documentos") {
-    const added = flow.documents.filter((document) => document.status !== "missing").length;
+    const counts = documentCounts(flow);
+    const titularDocuments = ["ine_titular", "curp", "constancia_situacion_fiscal", "comprobante_domicilio_titular", "comprobante_domicilio_negocio", "opinion_positiva_sat"]
+      .map((id) => getDocument(flow, id))
+      .filter(Boolean) as SolicitudDocument[];
+    const financialDocuments = ["estados_cuenta_bancarios", "declaracion_anual"]
+      .map((id) => getDocument(flow, id))
+      .filter(Boolean) as SolicitudDocument[];
+    const guarantorDocuments = ["ine_aval", "comprobante_domicilio_aval"]
+      .map((id) => getDocument(flow, id))
+      .filter(Boolean) as SolicitudDocument[];
+    const collateralDocument = getDocument(flow, "garantia");
+    const genericDocuments = flow.documents.filter((document) => document.id !== "ine_titular");
+    const hasMissing = counts.pending > 0;
+    const saveFile = (document: SolicitudDocument, file: File) =>
+      storedFileFromFile(file).then((storedFile) => runAction(() => saveDocumentFile(flow.flowId, document.id, storedFile)));
+    const renderDocumentCard = (document: SolicitudDocument) => {
+      const hasFile = Boolean(document.file);
+
+      return (
+        <div className="rounded-[8px] border border-slate-200 bg-white p-4" key={document.id}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-bold text-slate-950">{document.label}</p>
+                <span className={cx("rounded-full px-3 py-1 text-xs font-bold", documentStatusClass(document.status))}>
+                  {PUBLIC_DOCUMENT_STATUS_LABELS[document.status]}
+                </span>
+              </div>
+              {document.file && <p className="mt-1 truncate text-sm text-slate-500">{document.file.name}</p>}
+              <FilePreview file={document.file} />
+            </div>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              {hasFile && (
+                <Button
+                  icon={<Eye className="h-4 w-4" />}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  onClick={() => openStoredFile(document.file)}
+                >
+                  Ver archivo
+                </Button>
+              )}
+              <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                {hasFile ? <RefreshCw className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
+                {hasFile ? "Cambiar" : "Agregar"}
+                <input
+                  accept="image/*,.pdf"
+                  className="sr-only"
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void saveFile(document, file);
+                  }}
+                />
+              </label>
+              {hasFile && (
+                <Button
+                  icon={<Trash2 className="h-4 w-4" />}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => runAction(() => removeDocumentFile(flow.flowId, document.id))}
+                >
+                  Quitar
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+    const renderIneCard = () => {
+      const hasIne = Boolean(flow.ineFront && flow.ineBack);
+
+      return (
+        <div className="rounded-[8px] border border-slate-200 bg-white p-4" key="ine_titular">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-bold text-slate-950">INE del titular</p>
+                <span
+                  className={cx(
+                    "rounded-full px-3 py-1 text-xs font-bold",
+                    hasIne ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600",
+                  )}
+                >
+                  {hasIne ? "Agregada desde el inicio" : "Falta agregar"}
+                </span>
+              </div>
+              {hasIne ? (
+                <div className="mt-2 space-y-1 text-sm text-slate-500">
+                  <p className="truncate">Frente: {flow.ineFront?.name}</p>
+                  <p className="truncate">Reverso: {flow.ineBack?.name}</p>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">Necesitamos frente y reverso para continuar la revisión.</p>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              {hasIne && (
+                <Button
+                  icon={<Eye className="h-4 w-4" />}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  onClick={() => openStoredFile(flow.ineFront)}
+                >
+                  Ver archivo
+                </Button>
+              )}
+              <Button
+                icon={hasIne ? <RefreshCw className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
+                size="sm"
+                type="button"
+                variant="outline"
+                onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "ine"))}
+              >
+                {hasIne ? "Cambiar" : "Agregar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+    const renderSection = (title: string, description: string, documents: SolicitudDocument[]) => (
+      <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+        <div className="mb-4">
+          <h2 className="text-lg font-bold text-slate-950">{title}</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
+        </div>
+        <div className="grid gap-3">
+          {documents.map((document) => (document.id === "ine_titular" ? renderIneCard() : renderDocumentCard(document)))}
+        </div>
+      </section>
+    );
+    const renderChoice = (value: boolean | undefined, onSelect: (value: boolean) => void) => (
+      <div className="grid gap-3 sm:grid-cols-2">
+        {[
+          { label: "Sí", value: true },
+          { label: "No / aún no", value: false },
+        ].map((choice) => (
+          <button
+            className={cx(
+              "min-h-12 rounded-[8px] border px-4 text-base font-bold transition",
+              value === choice.value
+                ? "border-[#0F4C81] bg-[#F5FAFF] text-[#0F4C81] ring-2 ring-[#E6F0FA]"
+                : "border-slate-200 bg-white text-slate-800 hover:border-[#0F4C81]",
+            )}
+            key={choice.label}
+            type="button"
+            onClick={() => onSelect(choice.value)}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+    );
 
     return (
       <QuestionScreen
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
-        title="Agrega tus documentos"
-        description="Puedes continuar aunque todavía falte algún documento."
+        title="Completa tus documentos"
+        description="Puedes agregarlos ahora o continuar y completarlos después si hace falta."
         actions={
           <>
             <Button
@@ -662,6 +909,141 @@ export function SolicitudFlowPage() {
               loading={saving}
               size="lg"
               type="button"
+              onClick={() =>
+                runAction(() =>
+                  updateSolicitudStep(flow.flowId, flow.applicantKind === "physical" ? "phone_verification" : "autorizacion"),
+                )
+              }
+            >
+              Continuar
+            </Button>
+          </>
+        }
+      >
+        <div className="mb-5 grid gap-3 rounded-[8px] bg-slate-50 p-4 text-sm font-semibold text-slate-600 sm:grid-cols-2">
+          <div>Documentos agregados: {counts.added}</div>
+          <div>Pendientes por completar: {counts.pending}</div>
+        </div>
+        {hasMissing && (
+          <div className="mb-5 rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+            Puedes continuar, pero es posible que un asesor te pida completar algunos documentos después.
+          </div>
+        )}
+        {flow.applicantKind === "physical" ? (
+          <div className="grid gap-5">
+            {renderSection(
+              "Documentos del titular",
+              "Agrega los documentos principales para revisar tu solicitud.",
+              titularDocuments,
+            )}
+            {renderSection(
+              "Información financiera",
+              "Estos documentos ayudan a revisar el comportamiento de tu negocio.",
+              financialDocuments,
+            )}
+            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-950">Aval y garantía</h2>
+              </div>
+              <div className="grid gap-5">
+                <div className="rounded-[8px] bg-white p-4">
+                  <p className="mb-3 font-bold text-slate-950">¿Tu solicitud contará con aval?</p>
+                  {renderChoice(flow.hasGuarantor, (value) =>
+                    runAction(() => setGuarantorChoice(flow.flowId, value)),
+                  )}
+                  {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
+                  {flow.hasGuarantor === false && (
+                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                      Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-[8px] bg-white p-4">
+                  <p className="mb-3 font-bold text-slate-950">¿Cuentas con una garantía para esta solicitud?</p>
+                  {renderChoice(flow.hasCollateral, (value) =>
+                    runAction(() => setCollateralChoice(flow.flowId, value)),
+                  )}
+                  {flow.hasCollateral === true && collateralDocument && (
+                    <div className="mt-4">{renderDocumentCard(collateralDocument)}</div>
+                  )}
+                  {flow.hasCollateral === false && (
+                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                      Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <div className="grid gap-3">{genericDocuments.map(renderDocumentCard)}</div>
+        )}
+      </QuestionScreen>
+    );
+  }
+
+  if (flow.currentStep === "phone_verification") {
+    const verification = flow.phoneVerification;
+    const hasValidPhone = verification.phone.length === 10;
+    const phoneEnding = verification.phone.slice(-4);
+    const canConfirmCode = otpCode.length === 6;
+    const canContinue = verification.codeVerified;
+    const sendCode = async (eventName?: "sms_enviado" | "otp_reenviado") => {
+      setSaving(true);
+      setError(null);
+      setOtpSuccessMessage("");
+      try {
+        const nextFlow = await sendPhoneVerificationCode(flow.flowId, eventName);
+        setFlow(nextFlow);
+        setOtpCode("");
+        setResendCooldown(30);
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : "No pudimos enviar el código.");
+      } finally {
+        setSaving(false);
+      }
+    };
+    const confirmCode = async () => {
+      setSaving(true);
+      setError(null);
+      setOtpSuccessMessage("");
+      try {
+        const nextFlow = await verifyPhoneCode(flow.flowId, otpCode);
+        setFlow(nextFlow);
+        if (nextFlow.phoneVerification.codeVerified) {
+          setOtpSuccessMessage("Celular verificado correctamente.");
+        } else {
+          setError("El código no coincide. Revisa los dígitos e inténtalo de nuevo.");
+        }
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : "No pudimos confirmar el código.");
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    return (
+      <QuestionScreen
+        step={stepNumber}
+        totalSteps={TOTAL_STEPS}
+        title="Verifica tu celular"
+        description="Te enviaremos un código para confirmar que podemos contactarte durante el proceso."
+        actions={
+          <>
+            <Button
+              icon={<ArrowLeft className="h-4 w-4" />}
+              type="button"
+              variant="outline"
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "documentos"))}
+            >
+              Atrás
+            </Button>
+            <Button
+              disabled={!canContinue}
+              icon={<ArrowRight className="h-4 w-4" />}
+              loading={saving}
+              size="lg"
+              type="button"
               onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "autorizacion"))}
             >
               Continuar
@@ -669,52 +1051,94 @@ export function SolicitudFlowPage() {
           </>
         }
       >
-        <div className="mb-4 rounded-[8px] bg-slate-50 p-4 text-sm font-semibold text-slate-600">
-          {added} de {flow.documents.length} documentos agregados
-        </div>
-        <div className="grid gap-3">
-          {flow.documents.map((document) => (
-            <div className="flex flex-col gap-3 rounded-[8px] border border-slate-200 p-4 sm:flex-row sm:items-center" key={document.id}>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-bold text-slate-950">{document.label}</p>
-                  {document.optional && <span className="text-xs font-semibold text-slate-400">Opcional</span>}
-                </div>
-                {document.file && <p className="mt-1 truncate text-sm text-slate-500">{document.file.name}</p>}
-              </div>
-              <span className={cx("w-fit rounded-full px-3 py-1 text-xs font-bold", documentStatusClass(document.status))}>
-                {PUBLIC_DOCUMENT_STATUS_LABELS[document.status]}
-              </span>
-              <select
-                className="min-h-11 rounded-[10px] border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-[#0F4C81] focus:ring-2 focus:ring-[#E6F0FA]"
-                value={document.status}
-                onChange={(event) =>
-                  runAction(() => setDocumentStatus(flow.flowId, document.id, event.target.value as PublicDocumentStatus))
-                }
-              >
-                {Object.entries(PUBLIC_DOCUMENT_STATUS_LABELS).map(([status, label]) => (
-                  <option key={status} value={status}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
-                <FileUp className="h-4 w-4" />
-                Agregar
-                <input
-                  accept="image/*,.pdf"
-                  className="sr-only"
-                  type="file"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    void runAction(() => saveDocumentFile(flow.flowId, document.id, storedFileFromFile(file)));
-                  }}
-                />
-              </label>
+        {!hasValidPhone ? (
+          <div className="rounded-[8px] bg-amber-50 p-5 text-amber-800">
+            <p className="font-bold">Necesitamos tu número celular para enviarte el código.</p>
+            <Button
+              className="mt-4"
+              icon={<ArrowLeft className="h-4 w-4" />}
+              type="button"
+              variant="outline"
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "datos_basicos"))}
+            >
+              Volver a datos personales
+            </Button>
+          </div>
+        ) : (
+          <div className="grid gap-5">
+            <div className="rounded-[8px] bg-[#F5FAFF] p-4 text-base leading-7 text-slate-700">
+              <p>El código se enviará al número que capturaste en tus datos personales.</p>
+              <p className="mt-2 font-bold text-slate-950">
+                Enviaremos el código al número terminado en ...{phoneEnding}
+              </p>
             </div>
-          ))}
-        </div>
+
+            {!verification.codeSent && !verification.codeVerified && (
+              <Button
+                className="min-h-12 w-full"
+                icon={<MessageSquare className="h-4 w-4" />}
+                loading={saving}
+                size="lg"
+                type="button"
+                onClick={() => void sendCode("sms_enviado")}
+              >
+                {saving ? "Enviando código..." : "Enviar código"}
+              </Button>
+            )}
+
+            {verification.codeSent && !verification.codeVerified && (
+              <div className="grid gap-4">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-bold text-slate-700">Código de verificación</span>
+                  <input
+                    className="h-14 w-full rounded-[10px] border border-slate-200 bg-white px-4 text-center text-2xl font-bold tracking-[0.35em] text-slate-950 outline-none transition placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:border-[#0F4C81] focus:ring-2 focus:ring-[#E6F0FA]"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="Ingresa el código de 6 dígitos"
+                    value={otpCode}
+                    onChange={(event) => {
+                      setError(null);
+                      setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6));
+                    }}
+                  />
+                </label>
+                <Button
+                  className="min-h-12 w-full"
+                  disabled={!canConfirmCode}
+                  loading={saving}
+                  size="lg"
+                  type="button"
+                  onClick={() => void confirmCode()}
+                >
+                  {saving ? "Verificando..." : "Confirmar código"}
+                </Button>
+                <div className="flex flex-col gap-2 text-center text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-center">
+                  <span>¿No recibiste el código?</span>
+                  <button
+                    className="font-bold text-[#0F4C81] disabled:text-slate-400"
+                    disabled={resendCooldown > 0 || saving}
+                    type="button"
+                    onClick={() => void sendCode("otp_reenviado")}
+                  >
+                    {resendCooldown > 0 ? `Reenviar código en ${resendCooldown}s` : "Reenviar código"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {otpSuccessMessage && (
+              <div className="rounded-[8px] bg-emerald-50 p-4 text-center font-bold text-emerald-700">
+                {otpSuccessMessage}
+              </div>
+            )}
+            {error && <p className="text-center text-sm font-semibold text-red-600">{error}</p>}
+            {verification.attempts >= 5 && !verification.codeVerified && (
+              <p className="rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                Has intentado varias veces. Puedes reenviar el código o pedir ayuda.
+              </p>
+            )}
+          </div>
+        )}
       </QuestionScreen>
     );
   }
@@ -724,7 +1148,7 @@ export function SolicitudFlowPage() {
       <QuestionScreen
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
-        title="Autoriza la revisión"
+        title="Autorización para revisar tu información"
         description="Necesitamos tu autorización para revisar la información que compartiste."
         actions={
           <>
@@ -773,7 +1197,7 @@ export function SolicitudFlowPage() {
     );
   }
 
-  const docsAdded = flow.documents.filter((document) => document.status !== "missing").length;
+  const docsSummary = documentCounts(flow);
   const displayName =
     flow.applicantKind === "company"
       ? flow.basicData.companyName || flow.basicData.representativeName
@@ -814,7 +1238,8 @@ export function SolicitudFlowPage() {
           ["Teléfono", flow.basicData.phone || "Sin capturar"],
           ["Correo", flow.basicData.email || "Sin capturar"],
           ["Monto", money(flow.requestedAmount ?? 0)],
-          ["Documentos", `${docsAdded} agregados, ${flow.documents.length - docsAdded} faltantes`],
+          ["Documentos", `${docsSummary.added} agregados, ${docsSummary.pending} faltantes`],
+          ["Celular", flow.phoneVerified ? "Verificado" : "Pendiente"],
         ].map(([label, value]) => (
           <div className="flex items-center justify-between gap-4 rounded-[8px] bg-slate-50 p-4" key={label}>
             <span className="text-sm font-semibold text-slate-500">{label}</span>

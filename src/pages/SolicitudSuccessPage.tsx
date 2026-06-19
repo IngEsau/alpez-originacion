@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getSolicitudFlow } from "../features/solicitud/services/solicitudFlowService";
 import type { SolicitudFlowState } from "../features/solicitud/types/solicitud.types";
 import { Button } from "../shared/components/Button";
+import { ProgressBar } from "../features/solicitud/components/ProgressBar";
 
 function formatDate(value?: string): string {
   if (!value) return new Date().toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" });
@@ -22,6 +23,7 @@ export function SolicitudSuccessPage() {
 
   return (
     <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
+      <ProgressBar current={12} total={12} />
       <div className="rounded-[8px] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
           <span className="text-3xl font-bold">✓</span>

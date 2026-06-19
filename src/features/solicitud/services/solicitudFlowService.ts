@@ -10,7 +10,7 @@ import type {
   ApplicantKind,
   BasicData,
   BusinessData,
-  PublicDocumentStatus,
+  PhoneVerificationState,
   SolicitudDocument,
   SolicitudFlowState,
   SolicitudStep,
@@ -19,6 +19,7 @@ import type {
 import { mapPublicDocumentStatus } from "../types/solicitud.types";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
+const DEMO_OTP_CODE = "123456";
 
 const EMPTY_BASIC_DATA: BasicData = {
   fullName: "",
@@ -90,10 +91,35 @@ function personTypeFromKind(kind?: ApplicantKind): PersonType {
   return kind === "company" ? "moral" : "fisica";
 }
 
+function digitsOnly(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function maskPhone(phone: string): string {
+  const digits = digitsOnly(phone);
+  if (digits.length < 4) return "";
+  return `*** *** ${digits.slice(-4)}`;
+}
+
+function phoneVerificationForPhone(phone: string, current?: PhoneVerificationState): PhoneVerificationState {
+  const digits = digitsOnly(phone);
+  const maskedPhone = maskPhone(digits);
+  if (current?.phone === digits) return { ...current, maskedPhone };
+
+  return {
+    phone: digits,
+    maskedPhone,
+    codeSent: false,
+    codeVerified: false,
+    attempts: 0,
+  };
+}
+
 function traceStepForPublicStep(step: SolicitudStep) {
   if (step === "ine") return "ine_carga";
   if (step === "revision_ine") return "ine_validacion_calidad";
   if (step === "documentos") return "documentos";
+  if (step === "phone_verification") return "sms";
   if (step === "resumen" || step === "final") return "finalizado";
   if (step === "bienvenida" || step === "tipo_solicitante") return "originacion_iniciada";
   return "captura_datos";
@@ -106,12 +132,12 @@ function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
       { id: "constancia_situacion_fiscal", label: "Constancia de situación fiscal", applicationType: "constancia_situacion_fiscal", status: "missing" },
       { id: "comprobante_domicilio_empresa", label: "Comprobante domicilio empresa", applicationType: "comprobante_domicilio_empresa", status: "missing" },
       { id: "comprobante_domicilio_representante", label: "Comprobante domicilio representante legal", applicationType: "comprobante_domicilio_representante", status: "missing" },
-      { id: "estados_cuenta_bancarios", label: "Estados de cuenta bancarios", applicationType: "estados_cuenta_bancarios", status: "missing" },
+      { id: "estados_cuenta_bancarios", label: "Últimos 3 estados de cuenta bancarios", applicationType: "estados_cuenta_bancarios", status: "missing" },
       { id: "estados_financieros", label: "Estados financieros", applicationType: "estados_financieros", status: "missing" },
       { id: "declaracion_anual", label: "Declaración anual", applicationType: "declaracion_anual", status: "missing" },
       { id: "poder_representante_legal", label: "Poder representante legal", applicationType: "poder_representante_legal", status: "missing" },
       { id: "acta_constitutiva", label: "Acta constitutiva", applicationType: "acta_constitutiva", status: "missing" },
-      { id: "opinion_positiva_sat", label: "Opinión SAT", applicationType: "opinion_positiva_sat", status: "missing" },
+      { id: "opinion_positiva_sat", label: "Opinión positiva del SAT", applicationType: "opinion_positiva_sat", status: "missing" },
       { id: "garantia", label: "Garantía si aplica", applicationType: "garantia", status: "missing", optional: true },
       { id: "ine_aval", label: "Documentos del aval si aplica", applicationType: "ine_aval", status: "missing", optional: true },
       { id: "comprobante_domicilio_aval", label: "Comprobante domicilio aval", applicationType: "comprobante_domicilio_aval", status: "missing", optional: true },
@@ -122,13 +148,37 @@ function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
     { id: "ine_titular", label: "INE", applicationType: "ine_titular", status: "missing" },
     { id: "curp", label: "CURP", applicationType: "curp", status: "missing" },
     { id: "constancia_situacion_fiscal", label: "Constancia de situación fiscal", applicationType: "constancia_situacion_fiscal", status: "missing" },
-    { id: "comprobante_domicilio_titular", label: "Comprobante domicilio particular", applicationType: "comprobante_domicilio_titular", status: "missing" },
-    { id: "comprobante_domicilio_negocio", label: "Comprobante domicilio negocio", applicationType: "comprobante_domicilio_negocio", status: "missing" },
-    { id: "estados_cuenta_bancarios", label: "Estados de cuenta bancarios", applicationType: "estados_cuenta_bancarios", status: "missing" },
-    { id: "opinion_positiva_sat", label: "Opinión SAT", applicationType: "opinion_positiva_sat", status: "missing" },
-    { id: "ine_aval", label: "Documentos del aval si aplica", applicationType: "ine_aval", status: "missing", optional: true },
-    { id: "garantia", label: "Garantía si aplica", applicationType: "garantia", status: "missing", optional: true },
+    { id: "comprobante_domicilio_titular", label: "Comprobante de domicilio del titular", applicationType: "comprobante_domicilio_titular", status: "missing" },
+    { id: "comprobante_domicilio_negocio", label: "Comprobante de domicilio del negocio", applicationType: "comprobante_domicilio_negocio", status: "missing" },
+    { id: "opinion_positiva_sat", label: "Opinión positiva del SAT", applicationType: "opinion_positiva_sat", status: "missing" },
+    { id: "estados_cuenta_bancarios", label: "Últimos 3 estados de cuenta bancarios", applicationType: "estados_cuenta_bancarios", status: "missing" },
+    { id: "declaracion_anual", label: "Declaración anual", applicationType: "declaracion_anual", status: "missing" },
+    { id: "ine_aval", label: "INE del aval", applicationType: "ine_aval", status: "missing", optional: true },
+    { id: "comprobante_domicilio_aval", label: "Comprobante de domicilio del aval", applicationType: "comprobante_domicilio_aval", status: "missing", optional: true },
+    { id: "garantia", label: "Documento de garantía", applicationType: "garantia", status: "missing", optional: true },
   ];
+}
+
+function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
+  if (flow.applicantKind !== "physical") {
+    return {
+      ...flow,
+      phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
+    };
+  }
+  const physicalDocuments = documentsForKind("physical");
+  const existingById = new Map(flow.documents.map((document) => [document.id, document]));
+
+  return {
+    ...flow,
+    phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
+    documents: physicalDocuments.map((document) => ({
+      ...document,
+      ...existingById.get(document.id),
+      label: document.label,
+      optional: document.optional,
+    })),
+  };
 }
 
 async function addPublicEvent(
@@ -158,6 +208,7 @@ export async function createSolicitudFlow(): Promise<SolicitudFlowState> {
     basicData: EMPTY_BASIC_DATA,
     businessData: EMPTY_BUSINESS_DATA,
     documents: documentsForKind(),
+    phoneVerification: phoneVerificationForPhone(""),
     authorizationAccepted: false,
     createdAt: now,
     updatedAt: now,
@@ -169,7 +220,8 @@ export async function createSolicitudFlow(): Promise<SolicitudFlowState> {
 
 export async function getSolicitudFlow(flowId: string): Promise<SolicitudFlowState | null> {
   await wait();
-  return structuredClone(readStore().find((flow) => flow.flowId === flowId) ?? null);
+  const flow = readStore().find((item) => item.flowId === flowId);
+  return flow ? structuredClone(normalizeFlow(flow)) : null;
 }
 
 export async function updateSolicitudStep(flowId: string, currentStep: SolicitudStep): Promise<SolicitudFlowState> {
@@ -233,7 +285,14 @@ export async function saveBasicData(flowId: string, basicData: BasicData): Promi
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  const nextFlow = saveFlow({ ...flow, basicData, currentStep: "datos_negocio" });
+  const nextFlow = saveFlow({
+    ...flow,
+    basicData,
+    currentStep: "datos_negocio",
+    phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),
+    phoneVerified: flow.phoneVerification?.phone === digitsOnly(basicData.phone) ? flow.phoneVerified : false,
+    phoneVerifiedAt: flow.phoneVerification?.phone === digitsOnly(basicData.phone) ? flow.phoneVerifiedAt : undefined,
+  });
   await addPublicEvent(nextFlow, "datos_basicos_capturados", "Datos básicos capturados", "datos_basicos");
   return nextFlow;
 }
@@ -262,7 +321,7 @@ export async function saveDocumentFile(
   flowId: string,
   documentId: string,
   file: StoredFile,
-  status: PublicDocumentStatus = "uploaded",
+  status = "uploaded" as const,
 ): Promise<SolicitudFlowState> {
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
@@ -282,18 +341,112 @@ export async function saveDocumentFile(
   return nextFlow;
 }
 
-export async function setDocumentStatus(
-  flowId: string,
-  documentId: string,
-  status: PublicDocumentStatus,
-): Promise<SolicitudFlowState> {
+export async function removeDocumentFile(flowId: string, documentId: string): Promise<SolicitudFlowState> {
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
   return saveFlow({
     ...flow,
-    documents: flow.documents.map((document) => (document.id === documentId ? { ...document, status } : document)),
+    documents: flow.documents.map((document) =>
+      document.id === documentId ? { ...document, file: undefined, status: "missing" } : document,
+    ),
   });
+}
+
+export async function setGuarantorChoice(flowId: string, hasGuarantor: boolean): Promise<SolicitudFlowState> {
+  await wait();
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+  const documents = hasGuarantor
+    ? flow.documents
+    : flow.documents.map((document) =>
+        document.id === "ine_aval" || document.id === "comprobante_domicilio_aval"
+          ? { ...document, file: undefined, status: "missing" as const }
+          : document,
+      );
+  return saveFlow({ ...flow, hasGuarantor, documents });
+}
+
+export async function setCollateralChoice(flowId: string, hasCollateral: boolean): Promise<SolicitudFlowState> {
+  await wait();
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+  const documents = hasCollateral
+    ? flow.documents
+    : flow.documents.map((document) =>
+        document.id === "garantia" ? { ...document, file: undefined, status: "missing" as const } : document,
+      );
+  return saveFlow({ ...flow, hasCollateral, documents });
+}
+
+export async function sendPhoneVerificationCode(flowId: string, eventName = "sms_enviado"): Promise<SolicitudFlowState> {
+  await wait(650);
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+
+  const phoneVerification = phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification);
+  if (phoneVerification.phone.length !== 10) {
+    throw new Error("Necesitamos tu número celular para enviarte el código.");
+  }
+
+  const nextFlow = saveFlow({
+    ...flow,
+    currentStep: "phone_verification",
+    phoneVerification: {
+      ...phoneVerification,
+      codeSent: true,
+      codeVerified: false,
+      sentAt: new Date().toISOString(),
+    },
+    phoneVerified: false,
+    phoneVerifiedAt: undefined,
+  });
+  await addPublicEvent(nextFlow, eventName, eventName === "otp_reenviado" ? "Código reenviado" : "Código enviado", "phone_verification", {
+    eventName,
+    maskedPhone: nextFlow.phoneVerification.maskedPhone,
+    attempts: nextFlow.phoneVerification.attempts,
+  });
+  return nextFlow;
+}
+
+export async function verifyPhoneCode(flowId: string, code: string): Promise<SolicitudFlowState> {
+  await wait(650);
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+
+  const phoneVerification = phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification);
+  if (phoneVerification.phone.length !== 10) {
+    throw new Error("Necesitamos tu número celular para enviarte el código.");
+  }
+
+  const attempts = phoneVerification.attempts + 1;
+  const verified = code === DEMO_OTP_CODE;
+  const nextFlow = saveFlow({
+    ...flow,
+    currentStep: "phone_verification",
+    phoneVerification: {
+      ...phoneVerification,
+      codeSent: true,
+      codeVerified: verified,
+      attempts,
+      verifiedAt: verified ? new Date().toISOString() : phoneVerification.verifiedAt,
+    },
+    phoneVerified: verified,
+    phoneVerifiedAt: verified ? new Date().toISOString() : flow.phoneVerifiedAt,
+  });
+
+  await addPublicEvent(nextFlow, "otp_capturado", "Código capturado", "phone_verification", {
+    eventName: "otp_capturado",
+    maskedPhone: nextFlow.phoneVerification.maskedPhone,
+    attempts,
+  });
+  await addPublicEvent(nextFlow, verified ? "otp_verificado" : "otp_fallido", verified ? "Celular verificado" : "Código incorrecto", "phone_verification", {
+    eventName: verified ? "otp_verificado" : "otp_fallido",
+    maskedPhone: nextFlow.phoneVerification.maskedPhone,
+    attempts,
+  });
+
+  return nextFlow;
 }
 
 export async function acceptAuthorization(flowId: string, accepted: boolean): Promise<SolicitudFlowState> {
@@ -310,6 +463,9 @@ export async function acceptAuthorization(flowId: string, accepted: boolean): Pr
 function initialDocumentStatuses(flow: SolicitudFlowState): Record<string, DocumentStatus> {
   return flow.documents.reduce<Record<string, DocumentStatus>>((statuses, document) => {
     statuses[document.applicationType] = mapPublicDocumentStatus(document.status);
+    if (document.id === "ine_titular" && flow.ineFront && flow.ineBack) {
+      statuses[document.applicationType] = "cargado";
+    }
     return statuses;
   }, {});
 }
@@ -380,6 +536,9 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  if (flow.applicantKind === "physical" && !flow.phoneVerified) {
+    throw new Error("Necesitamos confirmar tu celular antes de enviar la solicitud.");
+  }
   if (!flow.authorizationAccepted) throw new Error("Necesitamos tu autorización para continuar con la solicitud.");
 
   let nextFlow = flow;

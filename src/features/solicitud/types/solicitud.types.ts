@@ -11,6 +11,7 @@ export type SolicitudStep =
   | "datos_negocio"
   | "monto"
   | "documentos"
+  | "phone_verification"
   | "autorizacion"
   | "resumen"
   | "final";
@@ -50,6 +51,16 @@ export interface BusinessData {
   annualSales: string;
 }
 
+export interface PhoneVerificationState {
+  phone: string;
+  maskedPhone: string;
+  codeSent: boolean;
+  codeVerified: boolean;
+  sentAt?: string;
+  verifiedAt?: string;
+  attempts: number;
+}
+
 export interface SolicitudFlowState {
   flowId: string;
   trace_id: string;
@@ -64,6 +75,11 @@ export interface SolicitudFlowState {
   businessData: BusinessData;
   requestedAmount?: number;
   documents: SolicitudDocument[];
+  hasGuarantor?: boolean;
+  hasCollateral?: boolean;
+  phoneVerification: PhoneVerificationState;
+  phoneVerified?: boolean;
+  phoneVerifiedAt?: string;
   authorizationAccepted: boolean;
   submittedAt?: string;
   createdAt: string;
