@@ -48,7 +48,7 @@ export function DecisionPanel({ application, onRefresh }: { application: Applica
           </div>
         </div>
         <div className="rounded-xl bg-slate-50 p-4">
-          <p className="text-xs font-bold uppercase text-slate-400">Línea asignada</p>
+          <p className="text-xs font-bold uppercase text-slate-400">Línea sugerida</p>
           <p className="mt-2 text-xl font-bold text-slate-950">{formatMoney(application.assignedCreditLine)}</p>
         </div>
       </div>

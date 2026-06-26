@@ -220,12 +220,14 @@ export interface CreditDecision {
 export interface CreditEvaluation {
   bureauHasHit: boolean;
   bureauScore: number | null;
+  bureauPassed: boolean;
+  publicDecision: "approved" | "rejected";
+  internalDecision: "approved_for_followup" | "rejected";
+  suggestedCreditLine: number | null;
   documentsComplete: boolean;
-  requiresDocumentFollowUp: boolean;
-  decision: "pending" | "approved" | "rejected";
-  approvedCreditLine: number | null;
+  documentReviewRequired: boolean;
   rejectionReason: "score_below_minimum" | "no_credit_history" | null;
-  evaluatedAt?: string;
+  evaluatedAt: string;
 }
 
 export interface TimelineEvent {
@@ -265,6 +267,7 @@ export interface Application {
   decisionResult?: CreditDecision;
   creditEvaluation?: CreditEvaluation;
   documentsComplete?: boolean;
+  documentReviewRequired?: boolean;
   requiresDocumentFollowUp?: boolean;
   otpVerified?: boolean;
   otpVerifiedAt?: string;

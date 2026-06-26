@@ -47,12 +47,12 @@ type DetailTab = (typeof tabs)[number]["id"];
 const scenarioCases = [
   { label: "Caso rechazado por score", bureauHasHit: true, bureauScore: 610, documentsComplete: true },
   { label: "Caso sin historial", bureauHasHit: false, bureauScore: null, documentsComplete: true },
-  { label: "Caso aprobado $10,000", bureauHasHit: true, bureauScore: 640, documentsComplete: true },
-  { label: "Caso aprobado $20,000", bureauHasHit: true, bureauScore: 660, documentsComplete: true },
-  { label: "Caso aprobado $30,000", bureauHasHit: true, bureauScore: 680, documentsComplete: true },
-  { label: "Aprobado $30,000 con documentos pendientes", bureauHasHit: true, bureauScore: 680, documentsComplete: false },
-  { label: "Caso aprobado $40,000", bureauHasHit: true, bureauScore: 700, documentsComplete: true },
-  { label: "Caso aprobado $60,000", bureauHasHit: true, bureauScore: 725, documentsComplete: true },
+  { label: "Sugerida $10,000", bureauHasHit: true, bureauScore: 640, documentsComplete: true },
+  { label: "Sugerida $20,000", bureauHasHit: true, bureauScore: 660, documentsComplete: true },
+  { label: "Sugerida $30,000", bureauHasHit: true, bureauScore: 680, documentsComplete: true },
+  { label: "Sugerida $30,000 con documentos pendientes", bureauHasHit: true, bureauScore: 680, documentsComplete: false },
+  { label: "Sugerida $40,000", bureauHasHit: true, bureauScore: 700, documentsComplete: true },
+  { label: "Sugerida $60,000", bureauHasHit: true, bureauScore: 725, documentsComplete: true },
 ];
 
 function pendingDocumentsCount(application: Application): number {
@@ -80,12 +80,13 @@ function AgentCreditSummary({ application }: { application: Application }) {
     ["Documentos completos", application.documentsComplete ? "Sí" : "No"],
     ["Documentos pendientes", String(pendingDocumentsCount(application))],
     ["OTP verificado", application.otpVerified ? "Sí" : "No"],
-    ["Consulta Buró", evaluation ? "Completada" : "Pendiente"],
+    ["Resultado de Buró", evaluation ? (evaluation.bureauPassed ? "Aprobado" : "Rechazado") : "Pendiente"],
     ["Hit Buró", evaluation ? (evaluation.bureauHasHit ? "Sí" : "No") : "Pendiente"],
     ["Score obtenido", evaluation?.bureauScore === null || evaluation?.bureauScore === undefined ? "No disponible" : String(evaluation.bureauScore)],
     ["Rango de score", scoreRangeLabel(evaluation?.bureauScore ?? null)],
-    ["Línea calculada", formatMoney(evaluation?.approvedCreditLine ?? application.assignedCreditLine)],
-    ["Decisión", evaluation?.decision === "approved" ? "Aprobada" : evaluation?.decision === "rejected" ? "Rechazada" : "Pendiente"],
+    ["Línea sugerida por score", formatMoney(evaluation?.suggestedCreditLine ?? application.assignedCreditLine)],
+    ["Decisión interna", evaluation?.internalDecision === "approved_for_followup" ? "Aprobada para seguimiento" : evaluation?.internalDecision === "rejected" ? "Rechazada" : "Pendiente"],
+    ["Seguimiento requerido", evaluation?.documentReviewRequired ? "Seguimiento documental requerido" : "No requerido"],
     ["Motivo interno de rechazo", rejectionReason],
     ["Fecha de evaluación", evaluation?.evaluatedAt ? formatDateTime(evaluation.evaluatedAt) : "Pendiente"],
   ];
@@ -115,10 +116,8 @@ function CreditScenarioSimulator() {
   };
 
   const clientMessage =
-    result?.decision === "approved"
-      ? result.documentsComplete
-        ? "Aprobado; un asesor se pondrá en contacto para explicar los siguientes pasos."
-        : "Aprobado; un asesor se pondrá en contacto para completar documentos."
+    result?.publicDecision === "approved"
+      ? "Aprobado; un asesor se pondrá en contacto para indicar los siguientes pasos."
       : "Por el momento no podemos continuar con la solicitud.";
 
   return (
@@ -182,8 +181,8 @@ function CreditScenarioSimulator() {
       </div>
       {result && (
         <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-5">
-          <div><p className="text-xs font-bold uppercase text-slate-400">Decisión</p><p className="font-semibold text-slate-950">{result.decision === "approved" ? "Aprobada" : "Rechazada"}</p></div>
-          <div><p className="text-xs font-bold uppercase text-slate-400">Línea asignada</p><p className="font-semibold text-slate-950">{formatMoney(result.approvedCreditLine)}</p></div>
+          <div><p className="text-xs font-bold uppercase text-slate-400">Decisión interna</p><p className="font-semibold text-slate-950">{result.internalDecision === "approved_for_followup" ? "Aprobada para seguimiento" : "Rechazada"}</p></div>
+          <div><p className="text-xs font-bold uppercase text-slate-400">Línea sugerida por score</p><p className="font-semibold text-slate-950">{formatMoney(result.suggestedCreditLine)}</p></div>
           <div><p className="text-xs font-bold uppercase text-slate-400">Rango</p><p className="font-semibold text-slate-950">{scoreRangeLabel(result.bureauScore)}</p></div>
           <div><p className="text-xs font-bold uppercase text-slate-400">Estado documental</p><p className="font-semibold text-slate-950">{result.documentsComplete ? "Completos" : "Incompletos"}</p></div>
           <div><p className="text-xs font-bold uppercase text-slate-400">Mensaje cliente</p><p className="font-semibold text-slate-950">{clientMessage}</p></div>

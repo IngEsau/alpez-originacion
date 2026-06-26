@@ -53,15 +53,18 @@ export function evaluatePhysicalPersonCredit(
   documentsComplete: boolean,
 ): CreditEvaluation {
   const evaluatedAt = new Date().toISOString();
+  const documentReviewRequired = !documentsComplete;
 
   if (!bureauHasHit) {
     return {
-      bureauHasHit,
-      bureauScore,
+      bureauHasHit: false,
+      bureauScore: null,
+      bureauPassed: false,
+      publicDecision: "rejected",
+      internalDecision: "rejected",
+      suggestedCreditLine: null,
       documentsComplete,
-      requiresDocumentFollowUp: false,
-      decision: "rejected",
-      approvedCreditLine: null,
+      documentReviewRequired,
       rejectionReason: "no_credit_history",
       evaluatedAt,
     };
@@ -69,43 +72,44 @@ export function evaluatePhysicalPersonCredit(
 
   if (bureauScore === null || bureauScore < 630) {
     return {
-      bureauHasHit,
+      bureauHasHit: true,
       bureauScore,
+      bureauPassed: false,
+      publicDecision: "rejected",
+      internalDecision: "rejected",
+      suggestedCreditLine: null,
       documentsComplete,
-      requiresDocumentFollowUp: false,
-      decision: "rejected",
-      approvedCreditLine: null,
+      documentReviewRequired,
       rejectionReason: "score_below_minimum",
       evaluatedAt,
     };
   }
 
-  let approvedCreditLine = 60000;
-  if (bureauScore <= 649) approvedCreditLine = 10000;
-  else if (bureauScore <= 669) approvedCreditLine = 20000;
-  else if (bureauScore <= 689) approvedCreditLine = 30000;
-  else if (bureauScore <= 719) approvedCreditLine = 40000;
+  let suggestedCreditLine = 60000;
+  if (bureauScore <= 649) suggestedCreditLine = 10000;
+  else if (bureauScore <= 669) suggestedCreditLine = 20000;
+  else if (bureauScore <= 689) suggestedCreditLine = 30000;
+  else if (bureauScore <= 719) suggestedCreditLine = 40000;
   // Business rule pending confirmation:
   // source diagram defines 690-719 and >720.
   // For the frontend demo, 720 is included in the highest range.
 
   return {
-    bureauHasHit,
+    bureauHasHit: true,
     bureauScore,
+    bureauPassed: true,
+    publicDecision: "approved",
+    internalDecision: "approved_for_followup",
+    suggestedCreditLine,
     documentsComplete,
-    requiresDocumentFollowUp: !documentsComplete,
-    decision: "approved",
-    approvedCreditLine,
+    documentReviewRequired,
     rejectionReason: null,
     evaluatedAt,
   };
 }
 
 export function getPublicCreditResult(evaluation: CreditEvaluation): PublicCreditResult {
-  if (evaluation.decision === "approved") {
-    return evaluation.documentsComplete ? "approved_documents_complete" : "approved_documents_incomplete";
-  }
-  return evaluation.rejectionReason === "no_credit_history" ? "rejected_no_credit_history" : "rejected_score";
+  return evaluation.publicDecision;
 }
 
 export function scoreRangeLabel(score: number | null): string {

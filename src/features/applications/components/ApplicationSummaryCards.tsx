@@ -10,7 +10,7 @@ export function ApplicationSummaryCards({ application }: { application: Applicat
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
       <MetricCard icon={<WalletCards className="h-5 w-5" />} label="Monto solicitado" value={formatMoney(application.requestedAmount)} />
-      <MetricCard icon={<BadgeDollarSign className="h-5 w-5" />} label="Línea asignada" value={formatMoney(application.assignedCreditLine)} />
+      <MetricCard icon={<BadgeDollarSign className="h-5 w-5" />} label="Línea sugerida" value={formatMoney(application.assignedCreditLine)} />
       <MetricCard icon={<Gauge className="h-5 w-5" />} label="Score" value={formatScore(application.bureauScore, application.finalScore)} />
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <p className="text-sm font-semibold text-slate-500">Nivel de riesgo</p>

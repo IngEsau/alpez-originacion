@@ -11,15 +11,6 @@ function formatDate(value?: string): string {
   return new Date(value).toLocaleDateString("es-MX", { day: "2-digit", month: "long", year: "numeric" });
 }
 
-function money(value: number | null | undefined): string {
-  if (!value) return "$0";
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 export function SolicitudSuccessPage() {
   const navigate = useNavigate();
   const { flowId } = useParams();
@@ -46,21 +37,16 @@ export function SolicitudSuccessPage() {
     );
   }
 
-  const approved = flow?.creditEvaluation?.decision === "approved";
-  const documentsComplete = Boolean(flow?.creditEvaluation?.documentsComplete);
+  const approved = flow?.creditEvaluation?.publicDecision === "approved";
   const title = approved ? "¡Tu solicitud fue aprobada!" : "Gracias por compartir tu información";
   const mainMessage = approved
-    ? "Con la información proporcionada, podemos continuar con tu solicitud."
+    ? "Recibimos correctamente tu información y podemos continuar con el proceso."
     : "Por el momento no podemos continuar con tu solicitud.";
   const secondaryMessage = approved
-    ? documentsComplete
-      ? "Un asesor se pondrá en contacto contigo para explicarte los siguientes pasos."
-      : "Aún necesitamos completar algunos documentos. Un asesor se pondrá en contacto contigo para ayudarte a terminar el proceso."
+    ? "Uno de nuestros asesores se pondrá en contacto contigo en breve para indicarte los siguientes pasos."
     : "Agradecemos el tiempo que dedicaste al proceso.";
   const infoMessage = approved
-    ? documentsComplete
-      ? "Mantén disponible el número de celular que registraste."
-      : "No necesitas volver a iniciar la solicitud."
+    ? "Mantén disponible el número de celular y/o correo que registraste."
     : "Más adelante podrás consultar nuevamente las opciones disponibles.";
 
   return (
@@ -76,15 +62,6 @@ export function SolicitudSuccessPage() {
         </div>
         <h1 className="text-3xl font-bold text-slate-950 sm:text-4xl">{title}</h1>
         <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-600">{mainMessage}</p>
-
-        {approved && (
-          <div className="mx-auto mt-8 max-w-sm rounded-[8px] bg-[#F5FAFF] p-5">
-            <p className="text-sm font-bold uppercase text-slate-500">Línea aprobada</p>
-            <p className="mt-2 text-3xl font-bold text-[#0F4C81]">
-              {money(flow?.creditEvaluation?.approvedCreditLine)}
-            </p>
-          </div>
-        )}
 
         <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-slate-600">{secondaryMessage}</p>
         <p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-slate-500">{infoMessage}</p>

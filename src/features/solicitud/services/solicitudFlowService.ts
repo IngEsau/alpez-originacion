@@ -168,21 +168,21 @@ function decisionResultForApplication(application: Application, flow: SolicitudF
     throw new Error("Evaluación de crédito no disponible.");
   }
 
-  const approved = evaluation.decision === "approved";
+  const approved = evaluation.publicDecision === "approved";
   return {
     applicationId: application.id,
     decision: approved ? "aprobada" : "rechazada",
-    status: approved ? (evaluation.requiresDocumentFollowUp ? "documentos_pendientes" : "investigacion_legal") : "rechazada",
+    status: approved ? (evaluation.documentReviewRequired ? "documentos_pendientes" : "investigacion_legal") : "rechazada",
     requestedAmount: flow.requestedAmount ?? application.requestedAmount,
-    assignedCreditLine: evaluation.approvedCreditLine,
+    assignedCreditLine: evaluation.suggestedCreditLine,
     bureauScore: evaluation.bureauScore,
     finalScore: null,
     riskLevel: riskFromScore(evaluation.bureauScore),
     rejectionReason: rejectionReasonFromEvaluation(evaluation.rejectionReason),
     message: approved
-      ? evaluation.requiresDocumentFollowUp
-        ? "Solicitud aprobada con seguimiento documental pendiente."
-        : "Solicitud aprobada para continuar investigación legal."
+      ? evaluation.documentReviewRequired
+        ? "Solicitud aprobada para seguimiento con documentos pendientes."
+        : "Solicitud aprobada para seguimiento operativo."
       : "Solicitud rechazada por regla de crédito simulada.",
     evaluatedAt: evaluation.evaluatedAt ?? new Date().toISOString(),
   };
@@ -194,8 +194,9 @@ async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise
   const metadata = {
     score: evaluation.bureauScore,
     bureauHasHit: evaluation.bureauHasHit,
-    approvedCreditLine: evaluation.approvedCreditLine,
+    suggestedCreditLine: evaluation.suggestedCreditLine,
     documentsComplete: evaluation.documentsComplete,
+    documentReviewRequired: evaluation.documentReviewRequired,
   };
 
   await addTraceEvent(flow.trace_id, {
@@ -230,27 +231,36 @@ async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise
   }
   await addTraceEvent(flow.trace_id, {
     step: "decision",
-    title: evaluation.decision === "approved" ? "Crédito aprobado" : "Crédito rechazado",
-    description: evaluation.decision === "approved" ? "La regla simulada aprobó la solicitud." : "La regla simulada rechazó la solicitud.",
-    status: evaluation.decision === "approved" ? "success" : "error",
-    metadata: { eventName: evaluation.decision === "approved" ? "credit_approved" : "credit_rejected", ...metadata },
+    title: evaluation.bureauPassed ? "Buró aprobado" : "Buró rechazado",
+    description: evaluation.bureauPassed ? "La evaluación de Buró permite continuar el proceso." : "La evaluación de Buró no permite continuar.",
+    status: evaluation.bureauPassed ? "success" : "error",
+    metadata: { eventName: evaluation.bureauPassed ? "bureau_passed" : "bureau_rejected", ...metadata },
   });
-  if (evaluation.approvedCreditLine) {
+  if (evaluation.suggestedCreditLine) {
     await addTraceEvent(flow.trace_id, {
       step: "decision",
-      title: "Línea asignada",
-      description: `Línea calculada: ${evaluation.approvedCreditLine}.`,
+      title: "Línea sugerida calculada",
+      description: `Línea sugerida por score: ${evaluation.suggestedCreditLine}.`,
       status: "success",
-      metadata: { eventName: "credit_line_assigned", ...metadata },
+      metadata: { eventName: "suggested_credit_line_calculated", ...metadata },
     });
   }
-  if (evaluation.requiresDocumentFollowUp) {
+  if (evaluation.documentReviewRequired) {
     await addTraceEvent(flow.trace_id, {
       step: "documentos",
       title: "Seguimiento documental requerido",
       description: "La solicitud aprobada requiere completar documentos.",
       status: "warning",
-      metadata: { eventName: "documents_follow_up_required", ...metadata },
+      metadata: { eventName: "document_followup_required", ...metadata },
+    });
+  }
+  if (evaluation.publicDecision === "approved") {
+    await addTraceEvent(flow.trace_id, {
+      step: "decision",
+      title: "Solicitud aprobada para seguimiento",
+      description: "El canal público mostrará aprobación para continuar el proceso.",
+      status: "success",
+      metadata: { eventName: "application_approved_for_followup", ...metadata },
     });
   }
 }
@@ -717,7 +727,8 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       decisionResult,
       creditEvaluation,
       documentsComplete,
-      requiresDocumentFollowUp: creditEvaluation.requiresDocumentFollowUp,
+      documentReviewRequired: creditEvaluation.documentReviewRequired,
+      requiresDocumentFollowUp: creditEvaluation.documentReviewRequired,
       otpVerified: flow.phoneVerified,
       otpVerifiedAt: flow.phoneVerifiedAt,
       bureauHasHit: creditEvaluation.bureauHasHit,
@@ -749,7 +760,8 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       decisionResult,
       creditEvaluation,
       documentsComplete,
-      requiresDocumentFollowUp: creditEvaluation.requiresDocumentFollowUp,
+      documentReviewRequired: creditEvaluation.documentReviewRequired,
+      requiresDocumentFollowUp: creditEvaluation.documentReviewRequired,
       otpVerified: flow.phoneVerified,
       otpVerifiedAt: flow.phoneVerifiedAt,
       bureauHasHit: creditEvaluation.bureauHasHit,
@@ -786,7 +798,7 @@ export async function markPublicResultDisplayed(flowId: string): Promise<Solicit
     description: "El cliente visualizó el resultado de la solicitud.",
     status: "success",
     metadata: {
-      eventName: "public_result_displayed",
+      eventName: flow.creditEvaluation?.publicDecision === "approved" ? "public_approval_displayed" : "public_rejection_displayed",
       result: flow.publicCreditResult,
       folio: flow.folio,
     },
