@@ -28,6 +28,7 @@ import {
   saveIneFile,
   saveRequestedAmount,
   sendPhoneVerificationCode,
+  startSolicitudProcessing,
   setCollateralChoice,
   setGuarantorChoice,
   selectApplicantKind,
@@ -63,6 +64,7 @@ const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number
   phone_verification: 9,
   autorizacion: 10,
   resumen: 11,
+  processing: 12,
 };
 
 function money(value: number): string {
@@ -116,7 +118,7 @@ function getDocument(flow: SolicitudFlowState, id: string): SolicitudDocument | 
   return flow.documents.find((document) => document.id === id);
 }
 
-function visiblePhysicalDocuments(flow: SolicitudFlowState): SolicitudDocument[] {
+function visibleSolicitudDocuments(flow: SolicitudFlowState): SolicitudDocument[] {
   return flow.documents.filter((document) => {
     if ((document.id === "ine_aval" || document.id === "comprobante_domicilio_aval") && !flow.hasGuarantor) {
       return false;
@@ -127,9 +129,11 @@ function visiblePhysicalDocuments(flow: SolicitudFlowState): SolicitudDocument[]
 }
 
 function documentCounts(flow: SolicitudFlowState): { added: number; pending: number } {
-  const documents = flow.applicantKind === "physical" ? visiblePhysicalDocuments(flow) : flow.documents;
+  const documents = visibleSolicitudDocuments(flow);
   const added = documents.filter((document) => {
-    if (document.id === "ine_titular") return Boolean(flow.ineFront && flow.ineBack);
+    if (document.id === "ine_titular" || document.id === "ine_representante_legal") {
+      return Boolean(flow.ineFront && flow.ineBack);
+    }
     return document.status !== "missing";
   }).length;
   return { added, pending: documents.length - added };
@@ -333,6 +337,7 @@ export function SolicitudFlowPage() {
   const [otpCode, setOtpCode] = useState("");
   const [otpSuccessMessage, setOtpSuccessMessage] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [processingIndex, setProcessingIndex] = useState(0);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -380,6 +385,34 @@ export function SolicitudFlowPage() {
       setSaving(false);
     }
   };
+
+  const processingMessages = [
+    "Revisando la información",
+    "Verificando la autorización",
+    "Consultando el historial crediticio",
+    "Preparando el resultado",
+  ];
+
+  async function processAndSubmitSolicitud() {
+    if (!flow) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const processingFlow = await startSolicitudProcessing(flow.flowId);
+      setFlow(processingFlow);
+      for (let index = 0; index < processingMessages.length; index += 1) {
+        setProcessingIndex(index);
+        await new Promise((resolve) => window.setTimeout(resolve, 650));
+      }
+      const submitted = await submitSolicitudFlow(flow.flowId);
+      setFlow(submitted);
+      navigate(`/solicitud/${flow.flowId}/final`);
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : "No pudimos finalizar la solicitud.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -732,14 +765,26 @@ export function SolicitudFlowPage() {
     const titularDocuments = ["ine_titular", "curp", "constancia_situacion_fiscal", "comprobante_domicilio_titular", "comprobante_domicilio_negocio", "opinion_positiva_sat"]
       .map((id) => getDocument(flow, id))
       .filter(Boolean) as SolicitudDocument[];
-    const financialDocuments = ["estados_cuenta_bancarios", "declaracion_anual"]
+    const financialDocuments = (flow.applicantKind === "company"
+      ? ["estados_cuenta_bancarios", "declaracion_anual", "estados_financieros"]
+      : ["estados_cuenta_bancarios", "declaracion_anual"])
+      .map((id) => getDocument(flow, id))
+      .filter(Boolean) as SolicitudDocument[];
+    const companyEssentialDocuments = [
+      "ine_representante_legal",
+      "comprobante_domicilio_empresa",
+      "comprobante_domicilio_representante",
+      "constancia_situacion_fiscal",
+      "opinion_positiva_sat",
+      "poder_representante_legal",
+      "acta_constitutiva",
+    ]
       .map((id) => getDocument(flow, id))
       .filter(Boolean) as SolicitudDocument[];
     const guarantorDocuments = ["ine_aval", "comprobante_domicilio_aval"]
       .map((id) => getDocument(flow, id))
       .filter(Boolean) as SolicitudDocument[];
     const collateralDocument = getDocument(flow, "garantia");
-    const genericDocuments = flow.documents.filter((document) => document.id !== "ine_titular");
     const hasMissing = counts.pending > 0;
     const saveFile = (document: SolicitudDocument, file: File) =>
       storedFileFromFile(file).then((storedFile) => runAction(() => saveDocumentFile(flow.flowId, document.id, storedFile)));
@@ -801,15 +846,15 @@ export function SolicitudFlowPage() {
         </div>
       );
     };
-    const renderIneCard = () => {
+    const renderIneCard = (document: SolicitudDocument) => {
       const hasIne = Boolean(flow.ineFront && flow.ineBack);
 
       return (
-        <div className="rounded-[8px] border border-slate-200 bg-white p-4" key="ine_titular">
+        <div className="rounded-[8px] border border-slate-200 bg-white p-4" key={document.id}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="font-bold text-slate-950">INE del titular</p>
+                <p className="font-bold text-slate-950">{document.label}</p>
                 <span
                   className={cx(
                     "rounded-full px-3 py-1 text-xs font-bold",
@@ -861,7 +906,11 @@ export function SolicitudFlowPage() {
           <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
         </div>
         <div className="grid gap-3">
-          {documents.map((document) => (document.id === "ine_titular" ? renderIneCard() : renderDocumentCard(document)))}
+          {documents.map((document) =>
+            document.id === "ine_titular" || document.id === "ine_representante_legal"
+              ? renderIneCard(document)
+              : renderDocumentCard(document),
+          )}
         </div>
       </section>
     );
@@ -909,11 +958,7 @@ export function SolicitudFlowPage() {
               loading={saving}
               size="lg"
               type="button"
-              onClick={() =>
-                runAction(() =>
-                  updateSolicitudStep(flow.flowId, flow.applicantKind === "physical" ? "phone_verification" : "autorizacion"),
-                )
-              }
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "phone_verification"))}
             >
               Continuar
             </Button>
@@ -976,7 +1021,51 @@ export function SolicitudFlowPage() {
             </section>
           </div>
         ) : (
-          <div className="grid gap-3">{genericDocuments.map(renderDocumentCard)}</div>
+          <div className="grid gap-5">
+            {renderSection(
+              "Documentos de la empresa y representante",
+              "Agrega los documentos principales de la empresa y de su representante legal.",
+              companyEssentialDocuments,
+            )}
+            {renderSection(
+              "Información financiera",
+              "Estos documentos ayudan a revisar el comportamiento de la empresa.",
+              financialDocuments,
+            )}
+            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-950">Aval y garantía</h2>
+              </div>
+              <div className="grid gap-5">
+                <div className="rounded-[8px] bg-white p-4">
+                  <p className="mb-3 font-bold text-slate-950">¿La solicitud contará con aval?</p>
+                  {renderChoice(flow.hasGuarantor, (value) =>
+                    runAction(() => setGuarantorChoice(flow.flowId, value)),
+                  )}
+                  {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
+                  {flow.hasGuarantor === false && (
+                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                      Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-[8px] bg-white p-4">
+                  <p className="mb-3 font-bold text-slate-950">¿Cuentan con una garantía para esta solicitud?</p>
+                  {renderChoice(flow.hasCollateral, (value) =>
+                    runAction(() => setCollateralChoice(flow.flowId, value)),
+                  )}
+                  {flow.hasCollateral === true && collateralDocument && (
+                    <div className="mt-4">{renderDocumentCard(collateralDocument)}</div>
+                  )}
+                  {flow.hasCollateral === false && (
+                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                      Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </section>
+          </div>
         )}
       </QuestionScreen>
     );
@@ -1148,15 +1237,15 @@ export function SolicitudFlowPage() {
       <QuestionScreen
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
-        title="Autorización para revisar tu información"
-        description="Necesitamos tu autorización para revisar la información que compartiste."
+        title="Autorización para revisar tu información e historial crediticio"
+        description="Necesitamos tu autorización para revisar la información que compartiste y continuar con el resultado."
         actions={
           <>
             <Button
               icon={<ArrowLeft className="h-4 w-4" />}
               type="button"
               variant="outline"
-              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "documentos"))}
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "phone_verification"))}
             >
               Atrás
             </Button>
@@ -1189,10 +1278,43 @@ export function SolicitudFlowPage() {
             }}
           />
           <span className="text-base leading-7 text-slate-700">
-            Autorizo a ALPEZ a revisar la información de esta solicitud y contactarme para continuar.
+            Autorizo a ALPEZ a revisar la información de esta solicitud, consultar mi historial crediticio y contactarme para continuar.
           </span>
         </label>
         {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
+      </QuestionScreen>
+    );
+  }
+
+  if (flow.currentStep === "processing") {
+    return (
+      <QuestionScreen
+        step={stepNumber}
+        totalSteps={TOTAL_STEPS}
+        title="Estamos revisando tu solicitud"
+        description="Esto tomará solo unos segundos."
+      >
+        <div className="grid gap-3">
+          {processingMessages.map((message, index) => (
+            <div
+              className={cx(
+                "flex items-center gap-3 rounded-[8px] p-4 text-sm font-semibold transition",
+                index <= processingIndex ? "bg-[#F5FAFF] text-[#0F4C81]" : "bg-slate-50 text-slate-400",
+              )}
+              key={message}
+            >
+              {index < processingIndex ? (
+                <Check className="h-5 w-5 text-emerald-600" />
+              ) : index === processingIndex ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <span className="h-5 w-5 rounded-full border border-slate-300" />
+              )}
+              <span>{message}</span>
+            </div>
+          ))}
+        </div>
+        {error && <p className="mt-4 text-center text-sm font-semibold text-red-600">{error}</p>}
       </QuestionScreen>
     );
   }
@@ -1224,7 +1346,7 @@ export function SolicitudFlowPage() {
             loading={saving}
             size="lg"
             type="button"
-            onClick={() => runAction(() => submitSolicitudFlow(flow.flowId), `/solicitud/${flow.flowId}/final`)}
+            onClick={() => void processAndSubmitSolicitud()}
           >
             Enviar solicitud
           </Button>

@@ -1,13 +1,10 @@
 import { useState } from "react";
-import { Upload } from "lucide-react";
+import { CheckCircle2, Eye, RotateCcw, Upload, XCircle } from "lucide-react";
 import type { DocumentItem, DocumentStatus } from "../types/document.types";
 import { Button } from "../../../shared/components/Button";
 import { DocumentStatusBadge } from "../../../shared/components/Badge";
-import { Select } from "../../../shared/components/Select";
 import { Textarea } from "../../../shared/components/Textarea";
-import { documentStatusLabels, formatDateTime } from "../../../shared/lib/formatters";
-
-const statuses: DocumentStatus[] = ["pendiente", "cargado", "en_revision", "validado", "rechazado"];
+import { formatDateTime } from "../../../shared/lib/formatters";
 
 export function DocumentUploadCard({
   document,
@@ -21,6 +18,16 @@ export function DocumentUploadCard({
   onStatusChange?: (documentId: string, status: DocumentStatus, comments?: string) => void;
 }) {
   const [comment, setComment] = useState(document.comments ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  function changeStatus(status: DocumentStatus) {
+    if (status === "rechazado" && !comment.trim()) {
+      setError("El comentario es obligatorio para solicitar cambio.");
+      return;
+    }
+    setError(null);
+    onStatusChange?.(document.id, status, status === "rechazado" ? comment : comment || undefined);
+  }
 
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -41,33 +48,67 @@ export function DocumentUploadCard({
             <p className="mt-2 text-xs text-slate-500">Cargado: {formatDateTime(document.uploadedAt)}</p>
           )}
         </div>
-        <Button
-          icon={<Upload className="h-4 w-4" />}
-          loading={busy}
-          size="sm"
-          type="button"
-          variant="secondary"
-          onClick={() => onUpload?.(document.id)}
-        >
-          Simular carga
-        </Button>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          {document.fileName && (
+            <Button icon={<Eye className="h-4 w-4" />} size="sm" type="button" variant="outline">
+              Ver archivo
+            </Button>
+          )}
+          <Button
+            icon={<Upload className="h-4 w-4" />}
+            loading={busy}
+            size="sm"
+            type="button"
+            variant="secondary"
+            onClick={() => onUpload?.(document.id)}
+          >
+            Simular carga
+          </Button>
+        </div>
       </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-[220px_1fr]">
-        <Select
-          label="Estado documental"
-          options={statuses.map((status) => ({ value: status, label: documentStatusLabels[status] }))}
-          value={document.status}
-          onChange={(event) => onStatusChange?.(document.id, event.target.value as DocumentStatus, comment)}
+      <div className="mt-4 grid gap-3">
+        <Textarea
+          label="Comentario del agente"
+          placeholder="La imagen no es legible, el documento está incompleto o se requiere una versión más reciente."
+          value={comment}
+          onChange={(event) => {
+            setError(null);
+            setComment(event.target.value);
+          }}
         />
-        {document.status === "rechazado" && (
-          <Textarea
-            label="Comentario de rechazo"
-            placeholder="Documento ilegible, vencido o no corresponde al solicitante"
-            value={comment}
-            onBlur={() => onStatusChange?.(document.id, "rechazado", comment || "Documento observado para corrección.")}
-            onChange={(event) => setComment(event.target.value)}
-          />
-        )}
+        {error && <p className="text-xs font-semibold text-red-600">{error}</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            icon={<CheckCircle2 className="h-4 w-4" />}
+            loading={busy}
+            size="sm"
+            type="button"
+            variant="secondary"
+            onClick={() => changeStatus("validado")}
+          >
+            Aprobar documento
+          </Button>
+          <Button
+            icon={<XCircle className="h-4 w-4" />}
+            loading={busy}
+            size="sm"
+            type="button"
+            variant="outline"
+            onClick={() => changeStatus("rechazado")}
+          >
+            Solicitar cambio
+          </Button>
+          <Button
+            icon={<RotateCcw className="h-4 w-4" />}
+            loading={busy}
+            size="sm"
+            type="button"
+            variant="ghost"
+            onClick={() => changeStatus("pendiente")}
+          >
+            Marcar pendiente
+          </Button>
+        </div>
       </div>
       {document.comments && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">{document.comments}</p>}
     </article>

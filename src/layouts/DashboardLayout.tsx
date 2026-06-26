@@ -70,7 +70,7 @@ export function DashboardLayout() {
               icon={<Play className="h-4 w-4" />}
               type="button"
               variant="secondary"
-              onClick={() => navigate("/originacion/iniciar")}
+              onClick={() => navigate("/solicitud")}
             >
               Iniciar originación
             </Button>
@@ -100,7 +100,7 @@ export function DashboardLayout() {
               size="sm"
               type="button"
               variant="outline"
-              onClick={() => navigate("/originacion/iniciar")}
+              onClick={() => navigate("/solicitud")}
             >
               Iniciar originación
             </Button>

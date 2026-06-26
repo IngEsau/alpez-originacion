@@ -12,7 +12,7 @@ export function DashboardHeader() {
       description="Resumen general de solicitudes de originación"
       actions={
         <>
-          <Button icon={<Play className="h-4 w-4" />} type="button" onClick={() => navigate("/originacion/iniciar")}>
+          <Button icon={<Play className="h-4 w-4" />} type="button" onClick={() => navigate("/solicitud")}>
             Iniciar originación
           </Button>
           <Button

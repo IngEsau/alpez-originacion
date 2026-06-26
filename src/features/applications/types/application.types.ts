@@ -217,6 +217,17 @@ export interface CreditDecision {
   evaluatedAt: string;
 }
 
+export interface CreditEvaluation {
+  bureauHasHit: boolean;
+  bureauScore: number | null;
+  documentsComplete: boolean;
+  requiresDocumentFollowUp: boolean;
+  decision: "pending" | "approved" | "rejected";
+  approvedCreditLine: number | null;
+  rejectionReason: "score_below_minimum" | "no_credit_history" | null;
+  evaluatedAt?: string;
+}
+
 export interface TimelineEvent {
   id: string;
   applicationId: string;
@@ -252,6 +263,13 @@ export interface Application {
   documents: DocumentItem[];
   validations: ValidationItem[];
   decisionResult?: CreditDecision;
+  creditEvaluation?: CreditEvaluation;
+  documentsComplete?: boolean;
+  requiresDocumentFollowUp?: boolean;
+  otpVerified?: boolean;
+  otpVerifiedAt?: string;
+  bureauHasHit?: boolean;
+  followUpAction?: string;
   timeline: TimelineEvent[];
   createdAt: string;
   updatedAt: string;

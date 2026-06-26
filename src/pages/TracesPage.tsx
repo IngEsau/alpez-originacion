@@ -27,7 +27,7 @@ export function TracesPage() {
         title="Trazas"
         description="Seguimiento operativo por trace_id"
         actions={
-          <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => navigate("/originacion/iniciar")}>
+          <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => navigate("/solicitud")}>
             Iniciar originación
           </Button>
         }
@@ -43,7 +43,7 @@ export function TracesPage() {
         <EmptyState
           title="No hay trazas registradas"
           description="Inicia una originación para generar el primer trace_id."
-          action={<Button onClick={() => navigate("/originacion/iniciar")}>Iniciar originación</Button>}
+          action={<Button onClick={() => navigate("/solicitud")}>Iniciar originación</Button>}
         />
       )}
       {!loading && traces.length > 0 && (

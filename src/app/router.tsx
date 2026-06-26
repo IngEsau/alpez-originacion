@@ -12,7 +12,6 @@ import { LoginPage } from "../pages/LoginPage";
 import { NewApplicationPage } from "../pages/NewApplicationPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { OriginacionFlowPage } from "../pages/OriginacionFlowPage";
-import { OriginacionStartPage } from "../pages/OriginacionStartPage";
 import { PortalPage } from "../pages/PortalPage";
 import { SolicitudFlowPage } from "../pages/SolicitudFlowPage";
 import { SolicitudSuccessPage } from "../pages/SolicitudSuccessPage";
@@ -43,8 +42,8 @@ export function AppRouter() {
         <Route path="/login" element={<LoginPage />} />
       </Route>
       <Route element={<OriginacionLayout />}>
-        <Route path="/originacion/iniciar" element={<OriginacionStartPage />} />
-        <Route path="/originacion/nueva" element={<Navigate replace to="/originacion/iniciar" />} />
+        <Route path="/originacion/iniciar" element={<Navigate replace to="/solicitud" />} />
+        <Route path="/originacion/nueva" element={<Navigate replace to="/solicitud" />} />
         <Route path="/originacion/:traceId/ine" element={<IneCapturePage />} />
         <Route path="/originacion/:traceId" element={<OriginacionFlowPage />} />
         <Route path="/originacion/:traceId/captura" element={<OriginacionFlowPage />} />

@@ -1,10 +1,14 @@
 import type {
   Address,
+  Application,
   CreateApplicationPayload,
+  CreditDecision,
   DocumentStatus,
   PersonType,
+  RejectionReason,
+  RiskLevel,
 } from "../../applications/types/application.types";
-import { createApplication } from "../../applications/services/applicationMockService";
+import { createApplication, getApplicationById, updateApplication } from "../../applications/services/applicationMockService";
 import { addTraceEvent, createTrace, linkTraceApplication } from "../../traces/services/traceService";
 import type {
   ApplicantKind,
@@ -17,6 +21,12 @@ import type {
   StoredFile,
 } from "../types/solicitud.types";
 import { mapPublicDocumentStatus } from "../types/solicitud.types";
+import {
+  areRequiredDocumentsComplete,
+  evaluatePhysicalPersonCredit,
+  getPublicCreditResult,
+  scoreRangeLabel,
+} from "../utils/creditEvaluation";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
 const DEMO_OTP_CODE = "123456";
@@ -125,22 +135,142 @@ function traceStepForPublicStep(step: SolicitudStep) {
   return "captura_datos";
 }
 
+function simulatedBureauInput(flow: SolicitudFlowState): { bureauHasHit: boolean; bureauScore: number | null } {
+  const searchable = `${flow.basicData.fullName} ${flow.basicData.companyName} ${flow.basicData.rfc}`.toLowerCase();
+  if (searchable.includes("sin historial")) return { bureauHasHit: false, bureauScore: null };
+  if (searchable.includes("rechazo")) return { bureauHasHit: true, bureauScore: 610 };
+
+  const amount = flow.requestedAmount ?? 30000;
+  if (amount <= 10000) return { bureauHasHit: true, bureauScore: 640 };
+  if (amount <= 20000) return { bureauHasHit: true, bureauScore: 660 };
+  if (amount <= 30000) return { bureauHasHit: true, bureauScore: 680 };
+  if (amount <= 40000) return { bureauHasHit: true, bureauScore: 700 };
+  return { bureauHasHit: true, bureauScore: 725 };
+}
+
+function riskFromScore(score: number | null): RiskLevel {
+  const label = scoreRangeLabel(score);
+  if (label === "Riesgo alto") return "alto";
+  if (label === "Riesgo medio") return "medio";
+  if (label === "Riesgo bajo") return "bajo";
+  return "no_aplica";
+}
+
+function rejectionReasonFromEvaluation(reason: "score_below_minimum" | "no_credit_history" | null): RejectionReason | undefined {
+  if (reason === "no_credit_history") return "sin_historial_crediticio";
+  if (reason === "score_below_minimum") return "score_insuficiente";
+  return undefined;
+}
+
+function decisionResultForApplication(application: Application, flow: SolicitudFlowState): CreditDecision {
+  const evaluation = flow.creditEvaluation;
+  if (!evaluation) {
+    throw new Error("Evaluación de crédito no disponible.");
+  }
+
+  const approved = evaluation.decision === "approved";
+  return {
+    applicationId: application.id,
+    decision: approved ? "aprobada" : "rechazada",
+    status: approved ? (evaluation.requiresDocumentFollowUp ? "documentos_pendientes" : "investigacion_legal") : "rechazada",
+    requestedAmount: flow.requestedAmount ?? application.requestedAmount,
+    assignedCreditLine: evaluation.approvedCreditLine,
+    bureauScore: evaluation.bureauScore,
+    finalScore: null,
+    riskLevel: riskFromScore(evaluation.bureauScore),
+    rejectionReason: rejectionReasonFromEvaluation(evaluation.rejectionReason),
+    message: approved
+      ? evaluation.requiresDocumentFollowUp
+        ? "Solicitud aprobada con seguimiento documental pendiente."
+        : "Solicitud aprobada para continuar investigación legal."
+      : "Solicitud rechazada por regla de crédito simulada.",
+    evaluatedAt: evaluation.evaluatedAt ?? new Date().toISOString(),
+  };
+}
+
+async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise<void> {
+  const evaluation = flow.creditEvaluation;
+  if (!evaluation) return;
+  const metadata = {
+    score: evaluation.bureauScore,
+    bureauHasHit: evaluation.bureauHasHit,
+    approvedCreditLine: evaluation.approvedCreditLine,
+    documentsComplete: evaluation.documentsComplete,
+  };
+
+  await addTraceEvent(flow.trace_id, {
+    step: "buro",
+    title: "Consulta Buró iniciada",
+    description: "Inicio de consulta simulada de historial crediticio.",
+    status: "running",
+    metadata: { eventName: "bureau_query_started" },
+  });
+  await addTraceEvent(flow.trace_id, {
+    step: "buro",
+    title: "Consulta Buró completada",
+    description: evaluation.bureauHasHit ? "Historial crediticio localizado." : "Sin historial crediticio localizado.",
+    status: evaluation.bureauHasHit ? "success" : "warning",
+    metadata: { eventName: "bureau_query_completed", ...metadata },
+  });
+  await addTraceEvent(flow.trace_id, {
+    step: "buro",
+    title: evaluation.bureauHasHit ? "Hit Buró recibido" : "Sin hit Buró",
+    description: evaluation.bureauHasHit ? "Se recibió respuesta con historial." : "No se recibió historial.",
+    status: evaluation.bureauHasHit ? "success" : "warning",
+    metadata: { eventName: evaluation.bureauHasHit ? "bureau_hit_received" : "bureau_no_hit_received", ...metadata },
+  });
+  if (evaluation.bureauScore !== null) {
+    await addTraceEvent(flow.trace_id, {
+      step: "decision",
+      title: "Score recibido",
+      description: `Score obtenido: ${evaluation.bureauScore}.`,
+      status: "success",
+      metadata: { eventName: "score_received", ...metadata },
+    });
+  }
+  await addTraceEvent(flow.trace_id, {
+    step: "decision",
+    title: evaluation.decision === "approved" ? "Crédito aprobado" : "Crédito rechazado",
+    description: evaluation.decision === "approved" ? "La regla simulada aprobó la solicitud." : "La regla simulada rechazó la solicitud.",
+    status: evaluation.decision === "approved" ? "success" : "error",
+    metadata: { eventName: evaluation.decision === "approved" ? "credit_approved" : "credit_rejected", ...metadata },
+  });
+  if (evaluation.approvedCreditLine) {
+    await addTraceEvent(flow.trace_id, {
+      step: "decision",
+      title: "Línea asignada",
+      description: `Línea calculada: ${evaluation.approvedCreditLine}.`,
+      status: "success",
+      metadata: { eventName: "credit_line_assigned", ...metadata },
+    });
+  }
+  if (evaluation.requiresDocumentFollowUp) {
+    await addTraceEvent(flow.trace_id, {
+      step: "documentos",
+      title: "Seguimiento documental requerido",
+      description: "La solicitud aprobada requiere completar documentos.",
+      status: "warning",
+      metadata: { eventName: "documents_follow_up_required", ...metadata },
+    });
+  }
+}
+
 function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
   if (kind === "company") {
     return [
-      { id: "ine_representante_legal", label: "INE representante legal", applicationType: "ine_representante_legal", status: "missing" },
+      { id: "ine_representante_legal", label: "INE del representante legal", applicationType: "ine_representante_legal", status: "missing" },
       { id: "constancia_situacion_fiscal", label: "Constancia de situación fiscal", applicationType: "constancia_situacion_fiscal", status: "missing" },
-      { id: "comprobante_domicilio_empresa", label: "Comprobante domicilio empresa", applicationType: "comprobante_domicilio_empresa", status: "missing" },
-      { id: "comprobante_domicilio_representante", label: "Comprobante domicilio representante legal", applicationType: "comprobante_domicilio_representante", status: "missing" },
+      { id: "comprobante_domicilio_empresa", label: "Comprobante de domicilio de la empresa", applicationType: "comprobante_domicilio_empresa", status: "missing" },
+      { id: "comprobante_domicilio_representante", label: "Comprobante de domicilio del representante legal", applicationType: "comprobante_domicilio_representante", status: "missing" },
       { id: "estados_cuenta_bancarios", label: "Últimos 3 estados de cuenta bancarios", applicationType: "estados_cuenta_bancarios", status: "missing" },
-      { id: "estados_financieros", label: "Estados financieros", applicationType: "estados_financieros", status: "missing" },
+      { id: "estados_financieros", label: "Estados financieros de los últimos 2 años", applicationType: "estados_financieros", status: "missing" },
       { id: "declaracion_anual", label: "Declaración anual", applicationType: "declaracion_anual", status: "missing" },
       { id: "poder_representante_legal", label: "Poder representante legal", applicationType: "poder_representante_legal", status: "missing" },
       { id: "acta_constitutiva", label: "Acta constitutiva", applicationType: "acta_constitutiva", status: "missing" },
       { id: "opinion_positiva_sat", label: "Opinión positiva del SAT", applicationType: "opinion_positiva_sat", status: "missing" },
-      { id: "garantia", label: "Garantía si aplica", applicationType: "garantia", status: "missing", optional: true },
-      { id: "ine_aval", label: "Documentos del aval si aplica", applicationType: "ine_aval", status: "missing", optional: true },
-      { id: "comprobante_domicilio_aval", label: "Comprobante domicilio aval", applicationType: "comprobante_domicilio_aval", status: "missing", optional: true },
+      { id: "ine_aval", label: "INE del aval", applicationType: "ine_aval", status: "missing", optional: true },
+      { id: "comprobante_domicilio_aval", label: "Comprobante de domicilio del aval", applicationType: "comprobante_domicilio_aval", status: "missing", optional: true },
+      { id: "garantia", label: "Documento de garantía", applicationType: "garantia", status: "missing", optional: true },
     ];
   }
 
@@ -160,19 +290,13 @@ function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
 }
 
 function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
-  if (flow.applicantKind !== "physical") {
-    return {
-      ...flow,
-      phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
-    };
-  }
-  const physicalDocuments = documentsForKind("physical");
+  const normalizedDocuments = documentsForKind(flow.applicantKind);
   const existingById = new Map(flow.documents.map((document) => [document.id, document]));
 
   return {
     ...flow,
     phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
-    documents: physicalDocuments.map((document) => ({
+    documents: normalizedDocuments.map((document) => ({
       ...document,
       ...existingById.get(document.id),
       label: document.label,
@@ -239,6 +363,8 @@ export async function selectApplicantKind(flowId: string, applicantKind: Applica
     ...flow,
     applicantKind,
     documents: documentsForKind(applicantKind),
+    hasGuarantor: undefined,
+    hasCollateral: undefined,
     currentStep: "ine",
   });
   await addPublicEvent(nextFlow, "tipo_solicitante_seleccionado", "Tipo de solicitante seleccionado", "tipo_solicitante", {
@@ -460,10 +586,24 @@ export async function acceptAuthorization(flowId: string, accepted: boolean): Pr
   return nextFlow;
 }
 
+export async function startSolicitudProcessing(flowId: string): Promise<SolicitudFlowState> {
+  await wait(200);
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+  return saveFlow({
+    ...flow,
+    currentStep: "processing",
+    processingStartedAt: new Date().toISOString(),
+  });
+}
+
 function initialDocumentStatuses(flow: SolicitudFlowState): Record<string, DocumentStatus> {
   return flow.documents.reduce<Record<string, DocumentStatus>>((statuses, document) => {
     statuses[document.applicationType] = mapPublicDocumentStatus(document.status);
     if (document.id === "ine_titular" && flow.ineFront && flow.ineBack) {
+      statuses[document.applicationType] = "cargado";
+    }
+    if (document.id === "ine_representante_legal" && flow.ineFront && flow.ineBack) {
       statuses[document.applicationType] = "cargado";
     }
     return statuses;
@@ -536,31 +676,120 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  if (flow.applicantKind === "physical" && !flow.phoneVerified) {
+  if ((flow.applicantKind === "physical" || flow.applicantKind === "company") && !flow.phoneVerified) {
     throw new Error("Necesitamos confirmar tu celular antes de enviar la solicitud.");
   }
   if (!flow.authorizationAccepted) throw new Error("Necesitamos tu autorización para continuar con la solicitud.");
+
+  const documentsComplete = areRequiredDocumentsComplete(flow.documents, {
+    hasGuarantor: flow.hasGuarantor,
+    hasCollateral: flow.hasCollateral,
+    ineLoaded: Boolean(flow.ineFront && flow.ineBack),
+  });
+  const bureauInput = simulatedBureauInput(flow);
+  const creditEvaluation = evaluatePhysicalPersonCredit(
+    bureauInput.bureauHasHit,
+    bureauInput.bureauScore,
+    documentsComplete,
+  );
+  const publicCreditResult = getPublicCreditResult(creditEvaluation);
 
   let nextFlow = flow;
   if (!flow.application_id) {
     const application = await createApplication(buildApplicationPayload(flow));
     await linkTraceApplication(flow.trace_id, application.id);
-    nextFlow = {
+    const flowWithEvaluation = {
       ...flow,
+      application_id: application.id,
+      folio: application.folio,
+      creditEvaluation,
+      publicCreditResult,
+    };
+    const decisionResult = decisionResultForApplication(application, flowWithEvaluation);
+    await updateApplication(application.id, {
+      status: decisionResult.status,
+      decision: decisionResult.decision,
+      rejectionReason: decisionResult.rejectionReason,
+      assignedCreditLine: decisionResult.assignedCreditLine,
+      bureauScore: decisionResult.bureauScore,
+      finalScore: decisionResult.finalScore,
+      riskLevel: decisionResult.riskLevel,
+      decisionResult,
+      creditEvaluation,
+      documentsComplete,
+      requiresDocumentFollowUp: creditEvaluation.requiresDocumentFollowUp,
+      otpVerified: flow.phoneVerified,
+      otpVerifiedAt: flow.phoneVerifiedAt,
+      bureauHasHit: creditEvaluation.bureauHasHit,
+    });
+    nextFlow = {
+      ...flowWithEvaluation,
       application_id: application.id,
       folio: application.folio,
       currentStep: "final",
       submittedAt: new Date().toISOString(),
     };
   } else {
+    const existingApplication = await getApplicationById(flow.application_id);
+    if (!existingApplication) throw new Error("Solicitud no encontrada.");
+    const flowWithEvaluation = {
+      ...flow,
+      creditEvaluation,
+      publicCreditResult,
+    };
+    const decisionResult = decisionResultForApplication(existingApplication, flowWithEvaluation);
+    const application = await updateApplication(flow.application_id, {
+      status: decisionResult.status,
+      decision: decisionResult.decision,
+      rejectionReason: decisionResult.rejectionReason,
+      assignedCreditLine: decisionResult.assignedCreditLine,
+      bureauScore: decisionResult.bureauScore,
+      finalScore: decisionResult.finalScore,
+      riskLevel: decisionResult.riskLevel,
+      decisionResult,
+      creditEvaluation,
+      documentsComplete,
+      requiresDocumentFollowUp: creditEvaluation.requiresDocumentFollowUp,
+      otpVerified: flow.phoneVerified,
+      otpVerifiedAt: flow.phoneVerifiedAt,
+      bureauHasHit: creditEvaluation.bureauHasHit,
+    });
     nextFlow = {
       ...flow,
+      folio: flow.folio ?? application.folio,
+      creditEvaluation,
+      publicCreditResult,
       currentStep: "final",
       submittedAt: flow.submittedAt ?? new Date().toISOString(),
     };
   }
 
   const saved = saveFlow(nextFlow);
+  await registerCreditEvaluationEvents(saved);
   await addPublicEvent(saved, "solicitud_enviada", "Solicitud enviada", "final", { folio: saved.folio });
   return saved;
+}
+
+export async function markPublicResultDisplayed(flowId: string): Promise<SolicitudFlowState> {
+  await wait(100);
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+  if (flow.publicResultDisplayedAt) return structuredClone(flow);
+
+  const nextFlow = saveFlow({
+    ...flow,
+    publicResultDisplayedAt: new Date().toISOString(),
+  });
+  await addTraceEvent(flow.trace_id, {
+    step: "finalizado",
+    title: "Resultado público mostrado",
+    description: "El cliente visualizó el resultado de la solicitud.",
+    status: "success",
+    metadata: {
+      eventName: "public_result_displayed",
+      result: flow.publicCreditResult,
+      folio: flow.folio,
+    },
+  });
+  return nextFlow;
 }

@@ -14,9 +14,27 @@ export type SolicitudStep =
   | "phone_verification"
   | "autorizacion"
   | "resumen"
+  | "processing"
   | "final";
 
 export type PublicDocumentStatus = "missing" | "uploaded" | "review_pending" | "needs_change";
+
+export type PublicCreditResult =
+  | "approved_documents_complete"
+  | "approved_documents_incomplete"
+  | "rejected_score"
+  | "rejected_no_credit_history";
+
+export interface CreditEvaluation {
+  bureauHasHit: boolean;
+  bureauScore: number | null;
+  documentsComplete: boolean;
+  requiresDocumentFollowUp: boolean;
+  decision: "pending" | "approved" | "rejected";
+  approvedCreditLine: number | null;
+  rejectionReason: "score_below_minimum" | "no_credit_history" | null;
+  evaluatedAt?: string;
+}
 
 export interface StoredFile {
   name: string;
@@ -81,6 +99,10 @@ export interface SolicitudFlowState {
   phoneVerified?: boolean;
   phoneVerifiedAt?: string;
   authorizationAccepted: boolean;
+  creditEvaluation?: CreditEvaluation;
+  publicCreditResult?: PublicCreditResult;
+  processingStartedAt?: string;
+  publicResultDisplayedAt?: string;
   submittedAt?: string;
   createdAt: string;
   updatedAt: string;

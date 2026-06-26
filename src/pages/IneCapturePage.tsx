@@ -77,7 +77,7 @@ export function IneCapturePage() {
       <EmptyState
         title="Traza no encontrada"
         description="El trace_id solicitado no existe en el store demo."
-        action={<Button onClick={() => navigate("/originacion/iniciar")}>Iniciar originación</Button>}
+        action={<Button onClick={() => navigate("/solicitud")}>Iniciar originación</Button>}
       />
     );
   }
