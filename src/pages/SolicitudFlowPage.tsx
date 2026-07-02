@@ -21,6 +21,7 @@ import {
   confirmIneReview,
   createSolicitudFlow,
   getSolicitudFlow,
+  loadSolicitudRequiredDocuments,
   removeDocumentFile,
   saveBasicData,
   saveBusinessData,
@@ -50,10 +51,11 @@ import { demoScenarioPersonTypeWarning, parseDemoCreditScenario } from "../featu
 import { isRequestedAmountInDemoRange, MAX_REQUESTED_AMOUNT, MIN_REQUESTED_AMOUNT } from "../features/solicitud/utils/requestedAmount";
 import { Button } from "../shared/components/Button";
 import { Input } from "../shared/components/Input";
+import { fileToBase64 } from "../shared/lib/fileToBase64";
 import { cx } from "../shared/lib/formatters";
 
 const TOTAL_STEPS = 12;
-const AMOUNT_OPTIONS = [10000, 20000, 30000, 40000, 60000];
+const AMOUNT_OPTIONS = [10000, 20000, 30000, 40000, 60000, 120000];
 
 const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number> = {
   tipo_solicitante: 2,
@@ -78,24 +80,17 @@ function money(value: number): string {
 }
 
 function storedFileFromFile(file: File): Promise<StoredFile> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        name: file.name,
-        type: file.type || "archivo",
-        size: file.size,
-        previewUrl: typeof reader.result === "string" ? reader.result : undefined,
-      });
+  return fileToBase64(file).then((previewUrl) => ({
+    name: file.name,
+    type: file.type || "archivo",
+    size: file.size,
+    previewUrl,
+  })).catch(() => {
+    return {
+      name: file.name,
+      type: file.type || "imagen",
+      size: file.size,
     };
-    reader.onerror = () => {
-      resolve({
-        name: file.name,
-        type: file.type || "imagen",
-        size: file.size,
-      });
-    };
-    reader.readAsDataURL(file);
   });
 }
 
@@ -122,10 +117,13 @@ function getDocument(flow: SolicitudFlowState, id: string): SolicitudDocument | 
 
 function visibleSolicitudDocuments(flow: SolicitudFlowState): SolicitudDocument[] {
   return flow.documents.filter((document) => {
-    if ((document.id === "ine_aval" || document.id === "comprobante_domicilio_aval") && !flow.hasGuarantor) {
+    if (
+      (document.applicationType === "ine_aval" || document.applicationType === "comprobante_domicilio_aval") &&
+      !flow.hasGuarantor
+    ) {
       return false;
     }
-    if (document.id === "garantia" && !flow.hasCollateral) return false;
+    if (document.applicationType === "garantia" && !flow.hasCollateral) return false;
     return true;
   });
 }
@@ -133,7 +131,7 @@ function visibleSolicitudDocuments(flow: SolicitudFlowState): SolicitudDocument[
 function documentCounts(flow: SolicitudFlowState): { added: number; pending: number } {
   const documents = visibleSolicitudDocuments(flow);
   const added = documents.filter((document) => {
-    if (document.id === "ine_titular" || document.id === "ine_representante_legal") {
+    if (document.applicationType === "ine_titular" || document.applicationType === "ine_representante_legal") {
       return Boolean(flow.ineFront && flow.ineBack);
     }
     return document.status !== "missing";
@@ -370,6 +368,16 @@ export function SolicitudFlowPage() {
       })
       .finally(() => setLoading(false));
   }, [flowId]);
+
+  useEffect(() => {
+    if (!flow || flow.currentStep !== "documentos" || flow.backendDocumentsLoaded) return;
+    setSaving(true);
+    setError(null);
+    void loadSolicitudRequiredDocuments(flow.flowId)
+      .then(setFlow)
+      .catch(() => setError("No pudimos cargar la lista de documentos. Mostraremos una lista base para continuar."))
+      .finally(() => setSaving(false));
+  }, [flow?.flowId, flow?.currentStep, flow?.backendDocumentsLoaded]);
 
   const stepNumber = useMemo(() => {
     if (!flow) return 1;
@@ -773,7 +781,7 @@ export function SolicitudFlowPage() {
           />
           {selectedAmount && !amountIsValid && (
             <p className="mt-2 text-sm font-semibold text-red-600">
-              Selecciona un monto entre $10,000 y $60,000.
+              Selecciona o escribe un monto entre $10,000 y $120,000.
             </p>
           )}
         </div>
@@ -783,15 +791,21 @@ export function SolicitudFlowPage() {
 
   if (flow.currentStep === "documentos") {
     const counts = documentCounts(flow);
-    const titularDocuments = ["ine_titular", "curp", "constancia_situacion_fiscal", "comprobante_domicilio_titular", "comprobante_domicilio_negocio", "opinion_positiva_sat"]
-      .map((id) => getDocument(flow, id))
-      .filter(Boolean) as SolicitudDocument[];
+    const documentsByType = (types: string[]) =>
+      visibleSolicitudDocuments(flow).filter((document) => types.includes(document.applicationType));
+    const titularDocuments = documentsByType([
+      "ine_titular",
+      "curp",
+      "constancia_situacion_fiscal",
+      "comprobante_domicilio_titular",
+      "comprobante_domicilio_negocio",
+      "opinion_positiva_sat",
+    ]);
     const financialDocuments = (flow.applicantKind === "company"
       ? ["estados_cuenta_bancarios", "declaracion_anual", "estados_financieros"]
       : ["estados_cuenta_bancarios", "declaracion_anual"])
-      .map((id) => getDocument(flow, id))
-      .filter(Boolean) as SolicitudDocument[];
-    const companyEssentialDocuments = [
+      .flatMap((type) => documentsByType([type]));
+    const companyEssentialDocuments = documentsByType([
       "ine_representante_legal",
       "comprobante_domicilio_empresa",
       "comprobante_domicilio_representante",
@@ -799,14 +813,15 @@ export function SolicitudFlowPage() {
       "opinion_positiva_sat",
       "poder_representante_legal",
       "acta_constitutiva",
-    ]
-      .map((id) => getDocument(flow, id))
-      .filter(Boolean) as SolicitudDocument[];
-    const guarantorDocuments = ["ine_aval", "comprobante_domicilio_aval"]
-      .map((id) => getDocument(flow, id))
-      .filter(Boolean) as SolicitudDocument[];
-    const collateralDocument = getDocument(flow, "garantia");
+    ]);
+    const guarantorDocuments = documentsByType(["ine_aval", "comprobante_domicilio_aval"]);
+    const collateralDocument = documentsByType(["garantia"])[0];
     const hasMissing = counts.pending > 0;
+    const isIneStartupDocument = (document: SolicitudDocument) =>
+      document.applicationType === "ine_titular" ||
+      document.applicationType === "ine_representante_legal" ||
+      document.backendKey?.toLowerCase().includes("ine") ||
+      document.label.toLowerCase().includes("ine");
     const saveFile = (document: SolicitudDocument, file: File) =>
       storedFileFromFile(file).then((storedFile) => runAction(() => saveDocumentFile(flow.flowId, document.id, storedFile)));
     const renderDocumentCard = (document: SolicitudDocument) => {
@@ -928,7 +943,7 @@ export function SolicitudFlowPage() {
         </div>
         <div className="grid gap-3">
           {documents.map((document) =>
-            document.id === "ine_titular" || document.id === "ine_representante_legal"
+            isIneStartupDocument(document)
               ? renderIneCard(document)
               : renderDocumentCard(document),
           )}

@@ -17,7 +17,7 @@ export type SolicitudStep =
   | "processing"
   | "final";
 
-export type PublicDocumentStatus = "missing" | "uploaded" | "review_pending" | "needs_change";
+export type PublicDocumentStatus = "missing" | "uploaded" | "review_pending" | "approved" | "needs_change";
 
 export type PublicCreditResult = "approved" | "rejected";
 
@@ -55,6 +55,8 @@ export interface SolicitudDocument {
   status: PublicDocumentStatus;
   file?: StoredFile;
   optional?: boolean;
+  backendDocumentId?: string | number;
+  backendKey?: string;
 }
 
 export interface BasicData {
@@ -87,6 +89,7 @@ export interface PhoneVerificationState {
 export interface SolicitudFlowState {
   flowId: string;
   trace_id: string;
+  backendTraceId?: string;
   folio?: string;
   application_id?: string;
   currentStep: SolicitudStep;
@@ -98,6 +101,11 @@ export interface SolicitudFlowState {
   businessData: BusinessData;
   requestedAmount?: number;
   documents: SolicitudDocument[];
+  backendDocumentsLoaded?: boolean;
+  documentProgress?: {
+    totalRequired?: number;
+    totalUploaded?: number;
+  };
   hasGuarantor?: boolean;
   hasCollateral?: boolean;
   phoneVerification: PhoneVerificationState;
@@ -118,12 +126,14 @@ export const PUBLIC_DOCUMENT_STATUS_LABELS: Record<PublicDocumentStatus, string>
   missing: "Falta agregar",
   uploaded: "Agregado",
   review_pending: "Por revisar",
+  approved: "Validado",
   needs_change: "Necesita cambio",
 };
 
 export function mapPublicDocumentStatus(status: PublicDocumentStatus): DocumentStatus {
   if (status === "uploaded") return "cargado";
   if (status === "review_pending") return "en_revision";
+  if (status === "approved") return "validado";
   if (status === "needs_change") return "rechazado";
   return "pendiente";
 }

@@ -1,5 +1,6 @@
 import { HelpCircle, Home, LogIn } from "lucide-react";
 import { Outlet, useNavigate } from "react-router-dom";
+import { AlpezLogo } from "../shared/components/AlpezLogo";
 import { Button } from "../shared/components/Button";
 
 export function SolicitudLayout() {
@@ -14,9 +15,7 @@ export function SolicitudLayout() {
             type="button"
             onClick={() => navigate("/")}
           >
-            <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#0F4C81] text-base font-bold text-white">
-              A
-            </span>
+            <AlpezLogo />
             <span className="text-lg font-bold">ALPEZ</span>
           </button>
 

@@ -3,6 +3,7 @@ import { ArrowRight, HelpCircle, LogIn, ShieldCheck } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../shared/components/Button";
 import { Card } from "../shared/components/Card";
+import { AlpezLogo } from "../shared/components/AlpezLogo";
 
 export function PortalPage() {
   const navigate = useNavigate();
@@ -12,9 +13,7 @@ export function PortalPage() {
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 lg:px-6">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#0F4C81] text-base font-bold text-white">
-            A
-          </span>
+          <AlpezLogo className="h-10 w-10 rounded-[10px]" />
           <span className="text-lg font-bold text-slate-950">ALPEZ</span>
         </div>
         <div className="flex items-center gap-2">
@@ -40,9 +39,7 @@ export function PortalPage() {
 
       <section className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="max-w-2xl text-center">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0F4C81] text-2xl font-bold text-white">
-            A
-          </div>
+          <AlpezLogo className="mx-auto mb-6 h-16 w-16 rounded-2xl" />
           <h1 className="text-4xl font-bold leading-tight text-slate-950 sm:text-6xl">
             Solicita tu línea de crédito en minutos
           </h1>

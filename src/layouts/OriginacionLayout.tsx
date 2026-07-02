@@ -1,6 +1,7 @@
 import { ArrowLeft, Home } from "lucide-react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "../shared/components/Button";
+import { AlpezLogo } from "../shared/components/AlpezLogo";
 import { traceStepLabels } from "../shared/lib/formatters";
 
 const progressSteps = [
@@ -33,9 +34,7 @@ export function OriginacionLayout() {
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 lg:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0F4C81] font-bold text-white">
-                A
-              </div>
+              <AlpezLogo className="h-10 w-10 rounded-xl" />
               <div>
                 <p className="font-bold text-slate-950">ALPEZ</p>
                 <p className="text-xs text-slate-500">Originación asistida</p>

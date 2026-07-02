@@ -5,7 +5,6 @@ import { RiskBadge } from "../../../shared/components/Badge";
 import { MetricCard } from "../../../shared/components/MetricCard";
 import { formatMoney, formatScore } from "../../../shared/lib/formatters";
 import { documentsToAttend } from "../utils/workflowState";
-import { MAX_REQUESTED_AMOUNT } from "../../solicitud/utils/requestedAmount";
 
 export function ApplicationSummaryCards({
   application,
@@ -18,10 +17,15 @@ export function ApplicationSummaryCards({
   workflow: InternalWorkflowState;
   onDocumentsClick?: () => void;
 }) {
+  const suggestedLine = application.creditEvaluation?.suggestedCreditLine ?? application.assignedCreditLine;
+  const amountWarning = suggestedLine !== null && suggestedLine !== undefined && application.requestedAmount > suggestedLine
+    ? "El monto solicitado excede la línea sugerida por score."
+    : undefined;
+
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
       <MetricCard
-        description={application.requestedAmount > MAX_REQUESTED_AMOUNT ? "El monto solicitado excede la línea máxima sugerida por el modelo." : undefined}
+        description={amountWarning}
         icon={<WalletCards className="h-5 w-5" />}
         label="Monto solicitado"
         value={formatMoney(application.requestedAmount)}

@@ -1,5 +1,6 @@
 import { ClipboardCheck, GitBranch, LayoutDashboard, LogOut, Menu, Play } from "lucide-react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { AlpezLogo } from "../shared/components/AlpezLogo";
 import { Button } from "../shared/components/Button";
 import { cx } from "../shared/lib/formatters";
 import { destroyDemoSession, getDemoSession } from "../shared/lib/session";
@@ -35,9 +36,7 @@ export function DashboardLayout() {
         <div className="flex h-full flex-col">
           <div className="border-b border-slate-200 p-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0F4C81] font-bold text-white">
-                A
-              </div>
+              <AlpezLogo className="rounded-xl" />
               <div>
                 <p className="font-bold text-slate-950">ALPEZ</p>
                 <p className="text-xs text-slate-500">Dashboard</p>

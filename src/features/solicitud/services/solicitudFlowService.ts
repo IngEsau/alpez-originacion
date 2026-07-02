@@ -26,6 +26,15 @@ import type {
 } from "../types/solicitud.types";
 import { mapPublicDocumentStatus } from "../types/solicitud.types";
 import {
+  loadRequiredDocuments,
+  saveOnboardingBusinessData,
+  saveOnboardingCreditData,
+  saveOnboardingGeneralData,
+  startOnboardingFlow,
+  uploadDocument,
+  USE_REAL_API,
+} from "../../onboarding/services/onboardingService";
+import {
   areRequiredDocumentsComplete,
   evaluateCreditByPersonType,
   getPublicCreditResult,
@@ -35,6 +44,41 @@ import { resolveDemoCreditScenario } from "../utils/demoCreditScenario";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
 const DEMO_OTP_CODE = "123456";
+
+function backendTraceIdOrThrow(flow: SolicitudFlowState): string {
+  const traceId = flow.backendTraceId || flow.trace_id;
+  if (!traceId && USE_REAL_API) {
+    throw new Error("No pudimos guardar este paso. Intenta nuevamente.");
+  }
+  return traceId;
+}
+
+function splitFullName(fullName: string): {
+  primer_nombre: string;
+  segundo_nombre?: string;
+  apellido_paterno: string;
+  apellido_materno?: string;
+} {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return { primer_nombre: "Prospecto", apellido_paterno: "ALPEZ" };
+  }
+  if (parts.length === 1) {
+    return { primer_nombre: parts[0], apellido_paterno: "ALPEZ" };
+  }
+  if (parts.length === 2) {
+    return { primer_nombre: parts[0], apellido_paterno: parts[1] };
+  }
+  if (parts.length === 3) {
+    return { primer_nombre: parts[0], apellido_paterno: parts[1], apellido_materno: parts[2] };
+  }
+  return {
+    primer_nombre: parts[0],
+    segundo_nombre: parts.slice(1, -2).join(" "),
+    apellido_paterno: parts[parts.length - 2],
+    apellido_materno: parts[parts.length - 1],
+  };
+}
 
 function createValidationEvents(flow: SolicitudFlowState, evaluatedAt: string): ValidationEvent[] {
   const source = "public_onboarding" as const;
@@ -369,6 +413,13 @@ function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
 }
 
 function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
+  if (flow.backendDocumentsLoaded) {
+    return {
+      ...flow,
+      phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
+    };
+  }
+
   const normalizedDocuments = documentsForKind(flow.applicantKind);
   const existingById = new Map(flow.documents.map((document) => [document.id, document]));
 
@@ -381,6 +432,17 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
       label: document.label,
       optional: document.optional,
     })),
+  };
+}
+
+function markIneDocumentFromStart(document: SolicitudDocument, flow: SolicitudFlowState): SolicitudDocument {
+  const searchable = `${document.id} ${document.label} ${document.backendKey ?? ""}`.toLowerCase();
+  if (!searchable.includes("ine")) return document;
+  if (!flow.ineFront || !flow.ineBack) return document;
+  return {
+    ...document,
+    status: "uploaded",
+    file: flow.ineFront,
   };
 }
 
@@ -480,7 +542,23 @@ export async function confirmIneReview(flowId: string, accepted: boolean): Promi
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  const nextFlow = saveFlow({ ...flow, ineReviewed: accepted, currentStep: accepted ? "datos_basicos" : "revision_ine" });
+  if (accepted && (!flow.ineFront || !flow.ineBack)) {
+    throw new Error("No pudimos iniciar la solicitud en este momento. Intenta nuevamente.");
+  }
+  const onboardingResult = accepted && flow.ineFront && flow.ineBack
+    ? await startOnboardingFlow({
+        flowId: flow.flowId,
+        applicantKind: flow.applicantKind ?? "physical",
+        ineFront: flow.ineFront,
+        ineBack: flow.ineBack,
+      })
+    : null;
+  const nextFlow = saveFlow({
+    ...flow,
+    ineReviewed: accepted,
+    backendTraceId: onboardingResult?.trace_id ?? flow.backendTraceId,
+    currentStep: accepted ? "datos_basicos" : "revision_ine",
+  });
   await addPublicEvent(nextFlow, "ine_revision_visual_confirmada", "Revisión visual de INE confirmada", "revision_ine", {
     accepted,
   });
@@ -491,6 +569,18 @@ export async function saveBasicData(flowId: string, basicData: BasicData): Promi
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  const splitName = splitFullName(
+    flow.applicantKind === "company" ? basicData.representativeName : basicData.fullName,
+  );
+  await saveOnboardingGeneralData({
+    trace_id: backendTraceIdOrThrow(flow),
+    primer_nombre: splitName.primer_nombre,
+    segundo_nombre: splitName.segundo_nombre,
+    apellido_paterno: splitName.apellido_paterno,
+    apellido_materno: splitName.apellido_materno,
+    telefono: digitsOnly(basicData.phone),
+    correo: basicData.email,
+  });
   const nextFlow = saveFlow({
     ...flow,
     basicData,
@@ -507,6 +597,12 @@ export async function saveBusinessData(flowId: string, businessData: BusinessDat
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  await saveOnboardingBusinessData({
+    trace_id: backendTraceIdOrThrow(flow),
+    actividad_negocio: businessData.activity,
+    anios_operacion: Number(businessData.seniorityYears) || 0,
+    ingresos_mensuales: Number(businessData.monthlyIncome) || 0,
+  });
   const nextFlow = saveFlow({ ...flow, businessData, currentStep: "monto" });
   await addPublicEvent(nextFlow, "datos_negocio_capturados", "Datos del negocio capturados", "datos_negocio");
   return nextFlow;
@@ -516,10 +612,30 @@ export async function saveRequestedAmount(flowId: string, requestedAmount: numbe
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  await saveOnboardingCreditData({
+    trace_id: backendTraceIdOrThrow(flow),
+    monto_solicitado: requestedAmount,
+  });
   const nextFlow = saveFlow({ ...flow, requestedAmount, currentStep: "documentos" });
   await addPublicEvent(nextFlow, "monto_solicitado_capturado", "Monto solicitado capturado", "monto", {
     requested_amount: requestedAmount,
   });
+  return nextFlow;
+}
+
+export async function loadSolicitudRequiredDocuments(flowId: string): Promise<SolicitudFlowState> {
+  await wait();
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+  if (flow.backendDocumentsLoaded) return structuredClone(normalizeFlow(flow));
+
+  const documents = await loadRequiredDocuments(backendTraceIdOrThrow(flow), flow.documents);
+  const nextFlow = saveFlow({
+    ...flow,
+    documents: documents.map((document) => markIneDocumentFromStart(document, flow)),
+    backendDocumentsLoaded: true,
+  });
+  await addPublicEvent(nextFlow, "lista_documentos_cargada", "Lista de documentos cargada", "documentos");
   return nextFlow;
 }
 
@@ -532,8 +648,21 @@ export async function saveDocumentFile(
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  const documentToUpload = flow.documents.find((document) => document.id === documentId);
+  if (!documentToUpload) throw new Error("No pudimos subir el archivo. Intenta nuevamente.");
+  const uploadResult = await uploadDocument({
+    traceId: backendTraceIdOrThrow(flow),
+    document: documentToUpload,
+    file,
+  });
   const nextFlow = saveFlow({
     ...flow,
+    documentProgress: uploadResult.progreso
+      ? {
+          totalRequired: uploadResult.progreso.total_requeridos,
+          totalUploaded: uploadResult.progreso.total_cargados,
+        }
+      : flow.documentProgress,
     documents: flow.documents.map((document) =>
       document.id === documentId ? { ...document, file, status } : document,
     ),
