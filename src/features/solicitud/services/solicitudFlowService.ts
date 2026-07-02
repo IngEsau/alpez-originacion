@@ -3,17 +3,21 @@ import type {
   Application,
   CreateApplicationPayload,
   CreditDecision,
+  NotificationRequest,
   DocumentStatus,
   PersonType,
   RejectionReason,
   RiskLevel,
+  ValidationEvent,
 } from "../../applications/types/application.types";
 import { createApplication, getApplicationById, updateApplication } from "../../applications/services/applicationMockService";
+import { calculateDocumentSummary, deriveInternalWorkflowState } from "../../applications/utils/workflowState";
 import { addTraceEvent, createTrace, linkTraceApplication } from "../../traces/services/traceService";
 import type {
   ApplicantKind,
   BasicData,
   BusinessData,
+  DemoCreditScenario,
   PhoneVerificationState,
   SolicitudDocument,
   SolicitudFlowState,
@@ -23,13 +27,53 @@ import type {
 import { mapPublicDocumentStatus } from "../types/solicitud.types";
 import {
   areRequiredDocumentsComplete,
-  evaluatePhysicalPersonCredit,
+  evaluateCreditByPersonType,
   getPublicCreditResult,
   scoreRangeLabel,
 } from "../utils/creditEvaluation";
+import { resolveDemoCreditScenario } from "../utils/demoCreditScenario";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
 const DEMO_OTP_CODE = "123456";
+
+function createValidationEvents(flow: SolicitudFlowState, evaluatedAt: string): ValidationEvent[] {
+  const source = "public_onboarding" as const;
+  return [
+    { name: "ine_uploaded", completedAt: flow.createdAt, source, detail: "INE cargada en canal autoasistido." },
+    { name: "ine_validation_completed", completedAt: flow.createdAt, source, detail: "Revisión inicial de INE completada." },
+    { name: "knockouts_completed", completedAt: flow.createdAt, source, detail: "Validaciones iniciales completadas." },
+    { name: "existing_client_validation_completed", completedAt: flow.createdAt, source, detail: "Cliente existente validado." },
+    { name: "otp_verified", completedAt: flow.phoneVerifiedAt ?? evaluatedAt, source, detail: "OTP verificado." },
+    { name: "lists_validation_completed", completedAt: evaluatedAt, source, detail: "Validación de listas completada." },
+    { name: "bureau_query_completed", completedAt: evaluatedAt, source, detail: "Consulta de historial completada." },
+    { name: "decision_model_completed", completedAt: evaluatedAt, source, detail: "Evaluación de crédito completada." },
+  ];
+}
+
+function notificationRecipient(flow: SolicitudFlowState, type: "email" | "sms"): string {
+  if (type === "email") return flow.basicData.email || "contacto@alpez.mx";
+  return flow.basicData.phone || "2220000000";
+}
+
+function createNotificationRequest(
+  flow: SolicitudFlowState,
+  applicationId: string,
+  template: NotificationRequest["template"],
+  type: NotificationRequest["type"] = "email",
+  variables: Record<string, string | number> = {},
+): NotificationRequest {
+  return {
+    type,
+    template,
+    recipient: notificationRecipient(flow, type),
+    applicationId,
+    variables: {
+      folio: flow.folio ?? "Pendiente",
+      applicantName: flow.basicData.fullName || flow.basicData.companyName || "Prospecto",
+      ...variables,
+    },
+  };
+}
 
 const EMPTY_BASIC_DATA: BasicData = {
   fullName: "",
@@ -197,7 +241,23 @@ async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise
     suggestedCreditLine: evaluation.suggestedCreditLine,
     documentsComplete: evaluation.documentsComplete,
     documentReviewRequired: evaluation.documentReviewRequired,
+    scenario: flow.demoCreditScenario,
   };
+
+  if (flow.demoCreditScenario) {
+    await addTraceEvent(flow.trace_id, {
+      step: "buro",
+      title: "Escenario demo aplicado",
+      description: "Se aplicó un escenario de evaluación forzado para demostración.",
+      status: "warning",
+      metadata: {
+        eventName: "demo_credit_scenario_applied",
+        scenario: flow.demoCreditScenario,
+        score: evaluation.bureauScore,
+        bureauHasHit: evaluation.bureauHasHit,
+      },
+    });
+  }
 
   await addTraceEvent(flow.trace_id, {
     step: "buro",
@@ -236,6 +296,15 @@ async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise
     status: evaluation.bureauPassed ? "success" : "error",
     metadata: { eventName: evaluation.bureauPassed ? "bureau_passed" : "bureau_rejected", ...metadata },
   });
+  if (evaluation.publicDecision === "rejected") {
+    await addTraceEvent(flow.trace_id, {
+      step: "decision",
+      title: "Crédito rechazado",
+      description: "La evaluación inicial rechazó la solicitud.",
+      status: "error",
+      metadata: { eventName: "credit_rejected", ...metadata },
+    });
+  }
   if (evaluation.suggestedCreditLine) {
     await addTraceEvent(flow.trace_id, {
       step: "decision",
@@ -331,7 +400,7 @@ async function addPublicEvent(
   });
 }
 
-export async function createSolicitudFlow(): Promise<SolicitudFlowState> {
+export async function createSolicitudFlow(demoCreditScenario?: DemoCreditScenario): Promise<SolicitudFlowState> {
   const trace = await createTrace({});
   const now = new Date().toISOString();
   const flow: SolicitudFlowState = {
@@ -344,6 +413,7 @@ export async function createSolicitudFlow(): Promise<SolicitudFlowState> {
     documents: documentsForKind(),
     phoneVerification: phoneVerificationForPhone(""),
     authorizationAccepted: false,
+    demoCreditScenario,
     createdAt: now,
     updatedAt: now,
   };
@@ -697,10 +767,16 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
     ineLoaded: Boolean(flow.ineFront && flow.ineBack),
   });
   const bureauInput = simulatedBureauInput(flow);
-  const creditEvaluation = evaluatePhysicalPersonCredit(
-    bureauInput.bureauHasHit,
-    bureauInput.bureauScore,
-    documentsComplete,
+  const personType = personTypeFromKind(flow.applicantKind);
+  const demoBureauInput = resolveDemoCreditScenario(flow.demoCreditScenario ?? null, personType);
+  const evaluationInput = demoBureauInput ?? bureauInput;
+  const creditEvaluation = evaluateCreditByPersonType(
+    { personType },
+    {
+      bureauHasHit: evaluationInput.bureauHasHit,
+      bureauScore: evaluationInput.bureauScore,
+      documentsComplete,
+    },
   );
   const publicCreditResult = getPublicCreditResult(creditEvaluation);
 
@@ -716,6 +792,15 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       publicCreditResult,
     };
     const decisionResult = decisionResultForApplication(application, flowWithEvaluation);
+    const documentSummary = calculateDocumentSummary(application.documents);
+    const workflow = deriveInternalWorkflowState(creditEvaluation, documentSummary);
+    const validationEvents = createValidationEvents(flowWithEvaluation, creditEvaluation.evaluatedAt);
+    const notificationRequests = [
+      createNotificationRequest(flowWithEvaluation, application.id, "application_received"),
+      ...(creditEvaluation.publicDecision === "approved"
+        ? [createNotificationRequest(flowWithEvaluation, application.id, "approved_for_followup")]
+        : []),
+    ];
     await updateApplication(application.id, {
       status: decisionResult.status,
       decision: decisionResult.decision,
@@ -726,7 +811,13 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       riskLevel: decisionResult.riskLevel,
       decisionResult,
       creditEvaluation,
+      demoCreditScenario: flow.demoCreditScenario,
+      validationEvents,
+      notificationRequests,
       documentsComplete,
+      documentSummary,
+      internalWorkflowStatus: workflow.status,
+      internalNextAction: workflow.nextAction,
       documentReviewRequired: creditEvaluation.documentReviewRequired,
       requiresDocumentFollowUp: creditEvaluation.documentReviewRequired,
       otpVerified: flow.phoneVerified,
@@ -749,6 +840,16 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       publicCreditResult,
     };
     const decisionResult = decisionResultForApplication(existingApplication, flowWithEvaluation);
+    const documentSummary = calculateDocumentSummary(existingApplication.documents);
+    const workflow = deriveInternalWorkflowState(creditEvaluation, documentSummary);
+    const validationEvents = createValidationEvents(flowWithEvaluation, creditEvaluation.evaluatedAt);
+    const notificationRequests = [
+      ...(existingApplication.notificationRequests ?? []),
+      createNotificationRequest(flowWithEvaluation, existingApplication.id, "application_received"),
+      ...(creditEvaluation.publicDecision === "approved"
+        ? [createNotificationRequest(flowWithEvaluation, existingApplication.id, "approved_for_followup")]
+        : []),
+    ];
     const application = await updateApplication(flow.application_id, {
       status: decisionResult.status,
       decision: decisionResult.decision,
@@ -759,7 +860,13 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       riskLevel: decisionResult.riskLevel,
       decisionResult,
       creditEvaluation,
+      demoCreditScenario: flow.demoCreditScenario,
+      validationEvents,
+      notificationRequests,
       documentsComplete,
+      documentSummary,
+      internalWorkflowStatus: workflow.status,
+      internalNextAction: workflow.nextAction,
       documentReviewRequired: creditEvaluation.documentReviewRequired,
       requiresDocumentFollowUp: creditEvaluation.documentReviewRequired,
       otpVerified: flow.phoneVerified,

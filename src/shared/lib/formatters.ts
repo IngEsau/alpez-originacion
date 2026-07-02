@@ -44,9 +44,9 @@ export const personTypeLabels: Record<PersonType, string> = {
 };
 
 export const scenarioLabels: Record<ApplicationScenario, string> = {
-  persona_fisica_hit_buro: "PF · Hit Buró",
-  persona_moral_hit_buro: "PM · Hit Buró",
-  persona_moral_no_hit_buro: "PM · Sin hit Buró",
+  persona_fisica_hit_buro: "Persona física · Con historial",
+  persona_moral_hit_buro: "Persona moral · Con historial",
+  persona_moral_no_hit_buro: "Persona moral · Sin historial",
 };
 
 export const fullScenarioLabels: Record<ApplicationScenario, string> = {
@@ -74,7 +74,7 @@ export const applicationStatusLabels: Record<ApplicationStatus, string> = {
 
 export const applicationDecisionLabels: Record<ApplicationDecision, string> = {
   pendiente: "Pendiente",
-  aprobada: "Aprobada",
+  aprobada: "Aprobada para continuar",
   rechazada: "Rechazada",
   observada: "Observada",
 };

@@ -9,8 +9,13 @@ import { formatDateTime, formatMoney, formatScore, rejectionReasonLabels } from 
 
 export function DecisionPanel({ application, onRefresh }: { application: Application; onRefresh: () => void }) {
   const [loading, setLoading] = useState(false);
+  const hasEvaluation = Boolean(application.creditEvaluation || application.decisionResult || application.decision !== "pendiente");
 
   async function run() {
+    if (hasEvaluation) {
+      const confirmed = window.confirm("Recalcular la evaluación sustituirá el resultado actual de esta solicitud. ¿Deseas continuar?");
+      if (!confirmed) return;
+    }
     setLoading(true);
     try {
       await runDecisionModel(application.id);
@@ -25,8 +30,14 @@ export function DecisionPanel({ application, onRefresh }: { application: Applica
       title="Modelo de decisión"
       description="Resultado simulado, determinístico y no productivo"
       actions={
-        <Button icon={<Play className="h-4 w-4" />} loading={loading} type="button" onClick={run}>
-          Ejecutar modelo
+        <Button
+          icon={<Play className="h-4 w-4" />}
+          loading={loading}
+          type="button"
+          variant={hasEvaluation ? "secondary" : "primary"}
+          onClick={run}
+        >
+          {hasEvaluation ? "Recalcular evaluación" : "Ejecutar evaluación"}
         </Button>
       }
     >
@@ -48,7 +59,7 @@ export function DecisionPanel({ application, onRefresh }: { application: Applica
           </div>
         </div>
         <div className="rounded-xl bg-slate-50 p-4">
-          <p className="text-xs font-bold uppercase text-slate-400">Línea sugerida</p>
+          <p className="text-xs font-bold uppercase text-slate-400">Línea sugerida por score</p>
           <p className="mt-2 text-xl font-bold text-slate-950">{formatMoney(application.assignedCreditLine)}</p>
         </div>
       </div>

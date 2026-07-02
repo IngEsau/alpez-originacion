@@ -23,6 +23,57 @@ export type ApplicationStatus =
 
 export type ApplicationDecision = "pendiente" | "aprobada" | "rechazada" | "observada";
 
+export type PublicDecision = "approved" | "rejected";
+
+export type InternalApplicationStatus =
+  | "evaluation_pending"
+  | "rejected"
+  | "approved_missing_documents"
+  | "approved_document_review"
+  | "approved_documents_need_changes"
+  | "approved_ready_for_legal_review"
+  | "legal_review"
+  | "legal_review_rejected"
+  | "credit_line_approved"
+  | "contracts_pending"
+  | "contracts_sent_for_signature"
+  | "completed";
+
+export type LegalReviewStatus = "pending" | "in_progress" | "approved" | "rejected";
+
+export type ContractStatus = "pending" | "prepared" | "sent_for_signature" | "signed";
+
+export type InternalNextAction =
+  | "run_evaluation"
+  | "close_application"
+  | "request_documents"
+  | "review_documents"
+  | "request_document_changes"
+  | "start_legal_review"
+  | "approve_legal_review"
+  | "reject_legal_review"
+  | "confirm_credit_line"
+  | "prepare_contracts"
+  | "register_contract_signature"
+  | "none";
+
+export interface DocumentSummary {
+  totalRequired: number;
+  missing: number;
+  uploaded: number;
+  pendingReview: number;
+  approved: number;
+  needsChange: number;
+  complete: boolean;
+}
+
+export interface InternalWorkflowState {
+  status: InternalApplicationStatus;
+  label: string;
+  nextAction: InternalNextAction;
+  nextActionLabel: string;
+}
+
 export type RiskLevel = "alto" | "medio" | "bajo" | "no_aplica";
 
 export type RejectionReason =
@@ -221,13 +272,55 @@ export interface CreditEvaluation {
   bureauHasHit: boolean;
   bureauScore: number | null;
   bureauPassed: boolean;
-  publicDecision: "approved" | "rejected";
+  publicDecision: PublicDecision;
   internalDecision: "approved_for_followup" | "rejected";
   suggestedCreditLine: number | null;
   documentsComplete: boolean;
   documentReviewRequired: boolean;
   rejectionReason: "score_below_minimum" | "no_credit_history" | null;
   evaluatedAt: string;
+}
+
+export type ValidationEventName =
+  | "ine_uploaded"
+  | "ine_validation_completed"
+  | "knockouts_completed"
+  | "existing_client_validation_completed"
+  | "otp_verified"
+  | "lists_validation_completed"
+  | "bureau_query_completed"
+  | "decision_model_completed";
+
+export interface ValidationEvent {
+  name: ValidationEventName;
+  completedAt: string;
+  source: "public_onboarding" | "agent_panel" | "backfill";
+  detail?: string;
+}
+
+export interface ValidationSummaryItem {
+  type: ValidationType;
+  label: string;
+  status: "pending" | "completed" | "rejected" | "observed";
+  detail: string;
+  completedAt?: string;
+  source?: "public_onboarding" | "agent_panel" | "backfill";
+}
+
+export type NotificationTemplate =
+  | "application_received"
+  | "documents_requested"
+  | "approved_for_followup"
+  | "final_credit_line_approved"
+  | "contracts_ready"
+  | "application_completed";
+
+export interface NotificationRequest {
+  type: "email" | "sms";
+  template: NotificationTemplate;
+  recipient: string;
+  applicationId: string;
+  variables: Record<string, string | number>;
 }
 
 export interface TimelineEvent {
@@ -254,6 +347,7 @@ export interface Application {
   applicantCurp?: string;
   requestedAmount: number;
   assignedCreditLine: number | null;
+  finalApprovedCreditLine?: number | null;
   bureauScore: number | null;
   finalScore: number | null;
   riskLevel: RiskLevel;
@@ -266,7 +360,15 @@ export interface Application {
   validations: ValidationItem[];
   decisionResult?: CreditDecision;
   creditEvaluation?: CreditEvaluation;
+  demoCreditScenario?: string;
+  validationEvents?: ValidationEvent[];
+  notificationRequests?: NotificationRequest[];
   documentsComplete?: boolean;
+  documentSummary?: DocumentSummary;
+  internalWorkflowStatus?: InternalApplicationStatus;
+  internalNextAction?: InternalNextAction;
+  legalReviewStatus?: LegalReviewStatus;
+  contractStatus?: ContractStatus;
   documentReviewRequired?: boolean;
   requiresDocumentFollowUp?: boolean;
   otpVerified?: boolean;

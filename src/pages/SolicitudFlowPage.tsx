@@ -46,6 +46,8 @@ import type {
   StoredFile,
 } from "../features/solicitud/types/solicitud.types";
 import { PUBLIC_DOCUMENT_STATUS_LABELS } from "../features/solicitud/types/solicitud.types";
+import { demoScenarioPersonTypeWarning, parseDemoCreditScenario } from "../features/solicitud/utils/demoCreditScenario";
+import { isRequestedAmountInDemoRange, MAX_REQUESTED_AMOUNT, MIN_REQUESTED_AMOUNT } from "../features/solicitud/utils/requestedAmount";
 import { Button } from "../shared/components/Button";
 import { Input } from "../shared/components/Input";
 import { cx } from "../shared/lib/formatters";
@@ -329,6 +331,9 @@ function BusinessDataFields({
 export function SolicitudFlowPage() {
   const { flowId } = useParams();
   const navigate = useNavigate();
+  const demoScenario = import.meta.env.VITE_DEMO_MODE === "true"
+    ? parseDemoCreditScenario(new URLSearchParams(window.location.search).get("demoScenario"))
+    : null;
   const [flow, setFlow] = useState<SolicitudFlowState | null>(null);
   const [loading, setLoading] = useState(Boolean(flowId));
   const [saving, setSaving] = useState(false);
@@ -441,7 +446,7 @@ export function SolicitudFlowPage() {
             type="button"
             onClick={() =>
               runAction(async () => {
-                const created = await createSolicitudFlow();
+                const created = await createSolicitudFlow(demoScenario ?? undefined);
                 navigate(`/solicitud/${created.flowId}`);
                 return created;
               })
@@ -477,6 +482,10 @@ export function SolicitudFlowPage() {
   }
 
   if (flow.currentStep === "tipo_solicitante") {
+    const demoWarning = import.meta.env.VITE_DEMO_MODE === "true"
+      ? demoScenarioPersonTypeWarning(flow.demoCreditScenario, flow.applicantKind)
+      : null;
+
     return (
       <QuestionScreen
         step={stepNumber}
@@ -497,6 +506,11 @@ export function SolicitudFlowPage() {
             title="Represento a una empresa"
             onClick={() => runAction(() => selectApplicantKind(flow.flowId, "company"))}
           />
+          {demoWarning && (
+            <p className="rounded-[8px] bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+              {demoWarning}
+            </p>
+          )}
         </div>
       </QuestionScreen>
     );
@@ -693,6 +707,7 @@ export function SolicitudFlowPage() {
 
   if (flow.currentStep === "monto") {
     const selectedAmount = otherAmount ? Number(otherAmount) : flow.requestedAmount;
+    const amountIsValid = isRequestedAmountInDemoRange(selectedAmount);
 
     return (
       <QuestionScreen
@@ -711,7 +726,7 @@ export function SolicitudFlowPage() {
               Atrás
             </Button>
             <Button
-              disabled={!selectedAmount || selectedAmount <= 0}
+              disabled={!amountIsValid}
               icon={<ArrowRight className="h-4 w-4" />}
               loading={saving}
               size="lg"
@@ -747,7 +762,8 @@ export function SolicitudFlowPage() {
           <Input
             className="h-12 text-base"
             label="Otro monto"
-            min="1"
+            max={MAX_REQUESTED_AMOUNT}
+            min={MIN_REQUESTED_AMOUNT}
             type="number"
             value={otherAmount}
             onChange={(event) => {
@@ -755,6 +771,11 @@ export function SolicitudFlowPage() {
               setFlow({ ...flow, requestedAmount: Number(event.target.value) || undefined });
             }}
           />
+          {selectedAmount && !amountIsValid && (
+            <p className="mt-2 text-sm font-semibold text-red-600">
+              Selecciona un monto entre $10,000 y $60,000.
+            </p>
+          )}
         </div>
       </QuestionScreen>
     );

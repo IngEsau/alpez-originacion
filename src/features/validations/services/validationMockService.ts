@@ -13,7 +13,8 @@ import {
   updateValidationInApplication,
 } from "../../applications/services/applicationMockService";
 import { wait } from "../../../shared/lib/mockDelay";
-import { runDecisionRules } from "../utils/decisionRules";
+import { evaluateCreditByPersonType } from "../../solicitud/utils/creditEvaluation";
+import { calculateDocumentSummary, deriveInternalWorkflowState } from "../../applications/utils/workflowState";
 
 async function getApplicationOrThrow(applicationId: string) {
   const application = await getApplicationById(applicationId);
@@ -234,6 +235,7 @@ export async function runListsValidation(applicationId: string): Promise<ListsVa
 export async function runDecisionModel(applicationId: string): Promise<CreditDecision> {
   await wait();
   const application = await getApplicationOrThrow(applicationId);
+  const documentSummary = calculateDocumentSummary(application.documents);
   const preparedApplication = {
     ...application,
     bureauScore:
@@ -241,7 +243,42 @@ export async function runDecisionModel(applicationId: string): Promise<CreditDec
         ? null
         : application.bureauScore ?? defaultBureauScore(application.id, application.scenario),
   };
-  const decision = runDecisionRules(preparedApplication);
+  const creditEvaluation = evaluateCreditByPersonType(preparedApplication, {
+    bureauHasHit: preparedApplication.scenario !== "persona_moral_no_hit_buro",
+    bureauScore: preparedApplication.bureauScore,
+    documentsComplete: documentSummary.complete,
+  });
+  const workflow = deriveInternalWorkflowState(creditEvaluation, documentSummary);
+  const decision: CreditDecision = {
+    applicationId: application.id,
+    decision: creditEvaluation.publicDecision === "approved" ? "aprobada" : "rechazada",
+    status:
+      creditEvaluation.publicDecision === "approved"
+        ? workflow.status === "approved_document_review"
+          ? "documentos_revision"
+          : workflow.status === "approved_ready_for_legal_review"
+            ? "investigacion_legal"
+            : "documentos_pendientes"
+        : "rechazada",
+    requestedAmount: application.requestedAmount,
+    assignedCreditLine: creditEvaluation.suggestedCreditLine,
+    bureauScore: creditEvaluation.bureauScore,
+    finalScore: null,
+    riskLevel: creditEvaluation.bureauPassed
+      ? creditEvaluation.suggestedCreditLine && creditEvaluation.suggestedCreditLine <= 10000
+        ? "alto"
+        : creditEvaluation.suggestedCreditLine && creditEvaluation.suggestedCreditLine <= 30000
+          ? "medio"
+          : "bajo"
+      : "no_aplica",
+    rejectionReason: creditEvaluation.rejectionReason === "no_credit_history"
+      ? "sin_historial_crediticio"
+      : creditEvaluation.rejectionReason === "score_below_minimum"
+        ? "score_insuficiente"
+        : undefined,
+    message: creditEvaluation.publicDecision === "approved" ? "Solicitud aprobada para seguimiento operativo." : "Solicitud rechazada por evaluación de Buró.",
+    evaluatedAt: creditEvaluation.evaluatedAt,
+  };
   const updated = appendTimeline(
     updateValidationInApplication(
       {
@@ -254,6 +291,13 @@ export async function runDecisionModel(applicationId: string): Promise<CreditDec
         riskLevel: decision.riskLevel,
         rejectionReason: decision.rejectionReason,
         decisionResult: decision,
+        creditEvaluation,
+        documentSummary,
+        documentsComplete: documentSummary.complete,
+        documentReviewRequired: !documentSummary.complete,
+        requiresDocumentFollowUp: !documentSummary.complete,
+        internalWorkflowStatus: workflow.status,
+        internalNextAction: workflow.nextAction,
       },
       "modelo_decision",
       {

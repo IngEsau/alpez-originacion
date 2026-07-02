@@ -7,11 +7,33 @@ import {
 } from "../../applications/services/applicationMockService";
 import { wait } from "../../../shared/lib/mockDelay";
 import { createDocumentsForApplication } from "../../../mocks/documents.mock";
-import type { PersonType } from "../../applications/types/application.types";
+import type { ApplicationStatus, CreditEvaluation, DocumentSummary, PersonType } from "../../applications/types/application.types";
+import { calculateDocumentSummary, deriveInternalWorkflowState } from "../../applications/utils/workflowState";
+
+function legacyStatusFromDocumentSummary(
+  currentStatus: ApplicationStatus,
+  evaluation: CreditEvaluation | undefined,
+  documentSummary: DocumentSummary,
+): ApplicationStatus {
+  const workflow = deriveInternalWorkflowState(evaluation, documentSummary);
+  if (workflow.status === "rejected") return "rechazada";
+  if (workflow.status === "approved_missing_documents" || workflow.status === "approved_documents_need_changes") {
+    return "documentos_pendientes";
+  }
+  if (workflow.status === "approved_document_review") return "documentos_revision";
+  if (workflow.status === "approved_ready_for_legal_review" || workflow.status === "legal_review") return "investigacion_legal";
+  if (workflow.status === "contracts_pending") return "contratos";
+  return currentStatus;
+}
+
+function documentSummaryDetail(summary: DocumentSummary): string {
+  return `Faltan ${summary.missing}, pendientes de revisión ${summary.pendingReview}, aprobados ${summary.approved}, necesitan cambio ${summary.needsChange}.`;
+}
 
 function getDocumentStatusForValidation(documents: DocumentItem[]): { status: "aprobado" | "observado"; detail: string } {
   const rejected = documents.filter((document) => document.required && document.status === "rechazado").length;
   const pending = documents.filter((document) => document.required && document.status === "pendiente").length;
+  const review = documents.filter((document) => document.required && ["cargado", "en_revision"].includes(document.status)).length;
 
   if (rejected > 0) {
     return { status: "observado", detail: `${rejected} documento(s) rechazado(s).` };
@@ -21,7 +43,11 @@ function getDocumentStatusForValidation(documents: DocumentItem[]): { status: "a
     return { status: "observado", detail: `${pending} documento(s) pendiente(s).` };
   }
 
-  return { status: "aprobado", detail: "Documentos requeridos cargados para revisión." };
+  if (review > 0) {
+    return { status: "observado", detail: `${review} documento(s) pendiente(s) de revisión.` };
+  }
+
+  return { status: "aprobado", detail: "Documentos requeridos aprobados." };
 }
 
 async function getApplicationOrThrow(applicationId: string) {
@@ -65,22 +91,31 @@ export async function simulateDocumentUpload(
   if (!updatedDocument) throw new Error("Documento no encontrado.");
 
   const documentValidation = getDocumentStatusForValidation(updatedDocuments);
+  const documentSummary = calculateDocumentSummary(updatedDocuments);
+  const workflow = deriveInternalWorkflowState(application.creditEvaluation, documentSummary);
+  const nextStatus = legacyStatusFromDocumentSummary(application.status, application.creditEvaluation, documentSummary);
   const updatedApplication = appendTimeline(
     updateValidationInApplication(
       {
         ...application,
         documents: updatedDocuments,
-        status: documentValidation.status === "aprobado" ? "documentos_revision" : "documentos_pendientes",
+        status: nextStatus,
+        documentSummary,
+        documentsComplete: documentSummary.complete,
+        documentReviewRequired: !documentSummary.complete,
+        requiresDocumentFollowUp: !documentSummary.complete,
+        internalWorkflowStatus: workflow.status,
+        internalNextAction: workflow.nextAction,
       },
       "documentos",
       {
         status: documentValidation.status,
         result: documentValidation.status === "aprobado" ? "Documentación cargada" : "Documentación observada",
-        detail: documentValidation.detail,
+        detail: documentSummaryDetail(documentSummary),
       },
     ),
     {
-      status: documentValidation.status === "aprobado" ? "documentos_revision" : "documentos_pendientes",
+      status: nextStatus,
       title: "Documento cargado",
       description: updatedDocument.label,
       actor: "Ejecutivo Demo",
@@ -128,22 +163,31 @@ export async function updateDocumentStatus(
   if (!updatedDocument) throw new Error("Documento no encontrado.");
 
   const documentValidation = getDocumentStatusForValidation(updatedDocuments);
+  const documentSummary = calculateDocumentSummary(updatedDocuments);
+  const workflow = deriveInternalWorkflowState(application.creditEvaluation, documentSummary);
+  const nextStatus = legacyStatusFromDocumentSummary(application.status, application.creditEvaluation, documentSummary);
   const updatedApplication = appendTimeline(
     updateValidationInApplication(
       {
         ...application,
         documents: updatedDocuments,
-        status: documentValidation.status === "aprobado" ? "documentos_revision" : "documentos_pendientes",
+        status: nextStatus,
+        documentSummary,
+        documentsComplete: documentSummary.complete,
+        documentReviewRequired: !documentSummary.complete,
+        requiresDocumentFollowUp: !documentSummary.complete,
+        internalWorkflowStatus: workflow.status,
+        internalNextAction: workflow.nextAction,
       },
       "documentos",
       {
         status: documentValidation.status,
         result: documentValidation.status === "aprobado" ? "Documentación cargada" : "Documentación observada",
-        detail: documentValidation.detail,
+        detail: documentSummaryDetail(documentSummary),
       },
     ),
     {
-      status: documentValidation.status === "aprobado" ? "documentos_revision" : "documentos_pendientes",
+      status: nextStatus,
       title: "Estado documental actualizado",
       description: `${updatedDocument.label}: ${status}`,
       actor: "Analista Demo",

@@ -8,15 +8,20 @@ import {
 } from "../../../shared/components/Badge";
 import { Button } from "../../../shared/components/Button";
 import { formatDate, personTypeLabels } from "../../../shared/lib/formatters";
+import type { InternalWorkflowState } from "../types/application.types";
 
 export function ApplicationDetailHeader({
   application,
-  onRunNext,
+  workflow,
+  hasEvaluation,
+  onRunContextAction,
   onRunDecision,
   running,
 }: {
   application: Application;
-  onRunNext: () => void;
+  workflow: InternalWorkflowState;
+  hasEvaluation?: boolean;
+  onRunContextAction: () => void;
   onRunDecision: () => void;
   running?: boolean;
 }) {
@@ -47,11 +52,19 @@ export function ApplicationDetailHeader({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button loading={running} type="button" variant="secondary" onClick={onRunNext}>
-            Ejecutar siguiente validación
-          </Button>
-          <Button icon={<Play className="h-4 w-4" />} loading={running} type="button" onClick={onRunDecision}>
-            Ejecutar modelo
+          {workflow.nextAction !== "none" && (
+            <Button loading={running} type="button" variant="secondary" onClick={onRunContextAction}>
+              {workflow.nextActionLabel}
+            </Button>
+          )}
+          <Button
+            icon={<Play className="h-4 w-4" />}
+            loading={running}
+            type="button"
+            variant={hasEvaluation ? "outline" : "primary"}
+            onClick={onRunDecision}
+          >
+            {hasEvaluation ? "Recalcular evaluación" : "Ejecutar evaluación"}
           </Button>
         </div>
       </div>

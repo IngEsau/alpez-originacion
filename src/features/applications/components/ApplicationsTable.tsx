@@ -25,7 +25,7 @@ export function ApplicationsTable({ applications }: { applications: Application[
             <th className="px-4 py-3">Decisión</th>
             <th className="px-4 py-3">Score</th>
             <th className="px-4 py-3">Monto solicitado</th>
-            <th className="px-4 py-3">Línea sugerida</th>
+            <th className="px-4 py-3">Línea sugerida por score</th>
             <th className="px-4 py-3">Ejecutivo</th>
             <th className="px-4 py-3">Fecha creación</th>
             <th className="px-4 py-3">Acciones</th>

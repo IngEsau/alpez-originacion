@@ -1,16 +1,7 @@
 import type { DocumentItem, DocumentStatus } from "../types/document.types";
 import { Card } from "../../../shared/components/Card";
 import { DocumentUploadCard } from "./DocumentUploadCard";
-
-function documentCounters(documents: DocumentItem[]) {
-  return {
-    required: documents.filter((document) => document.required).length,
-    loaded: documents.filter((document) => document.status === "cargado").length,
-    validated: documents.filter((document) => document.status === "validado").length,
-    rejected: documents.filter((document) => document.status === "rechazado").length,
-    pending: documents.filter((document) => document.status === "pendiente").length,
-  };
-}
+import { calculateDocumentSummary } from "../../applications/utils/workflowState";
 
 export function DocumentChecklist({
   documents,
@@ -27,7 +18,7 @@ export function DocumentChecklist({
   onUpload?: (documentId: string) => void;
   onStatusChange?: (documentId: string, status: DocumentStatus, comments?: string) => void;
 }) {
-  const counters = documentCounters(documents);
+  const summary = calculateDocumentSummary(documents);
 
   return (
     <Card
@@ -35,11 +26,12 @@ export function DocumentChecklist({
       description={description}
       actions={
         <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
-          <span>Req. {counters.required}</span>
-          <span>Carg. {counters.loaded}</span>
-          <span>Val. {counters.validated}</span>
-          <span>Rech. {counters.rejected}</span>
-          <span>Pend. {counters.pending}</span>
+          <span>Req. {summary.totalRequired}</span>
+          <span>Faltan {summary.missing}</span>
+          <span>Carg. {summary.uploaded}</span>
+          <span>Rev. {summary.pendingReview}</span>
+          <span>Val. {summary.approved}</span>
+          <span>Cambio {summary.needsChange}</span>
         </div>
       }
     >

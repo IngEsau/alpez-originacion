@@ -47,7 +47,7 @@ export function SolicitudSuccessPage() {
     : "Agradecemos el tiempo que dedicaste al proceso.";
   const infoMessage = approved
     ? "Mantén disponible el número de celular y/o correo que registraste."
-    : "Más adelante podrás consultar nuevamente las opciones disponibles.";
+    : "";
 
   return (
     <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
@@ -64,7 +64,7 @@ export function SolicitudSuccessPage() {
         <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-600">{mainMessage}</p>
 
         <p className="mx-auto mt-6 max-w-xl text-base leading-7 text-slate-600">{secondaryMessage}</p>
-        <p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-slate-500">{infoMessage}</p>
+        {infoMessage && <p className="mx-auto mt-2 max-w-xl text-sm font-semibold text-slate-500">{infoMessage}</p>}
 
         <div className="mx-auto mt-8 grid max-w-md gap-3 rounded-[8px] bg-slate-50 p-4 text-left">
           <div className="flex items-center justify-between gap-4">

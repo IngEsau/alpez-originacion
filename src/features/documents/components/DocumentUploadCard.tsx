@@ -62,14 +62,14 @@ export function DocumentUploadCard({
             variant="secondary"
             onClick={() => onUpload?.(document.id)}
           >
-            Simular carga
+            Cargar
           </Button>
         </div>
       </div>
       <div className="mt-4 grid gap-3">
         <Textarea
           label="Comentario del agente"
-          placeholder="La imagen no es legible, el documento está incompleto o se requiere una versión más reciente."
+          placeholder="La imagen no es legible. El documento está incompleto. No corresponde al titular. Se requiere una versión más reciente."
           value={comment}
           onChange={(event) => {
             setError(null);
@@ -86,7 +86,7 @@ export function DocumentUploadCard({
             variant="secondary"
             onClick={() => changeStatus("validado")}
           >
-            Aprobar documento
+            Aprobar
           </Button>
           <Button
             icon={<XCircle className="h-4 w-4" />}

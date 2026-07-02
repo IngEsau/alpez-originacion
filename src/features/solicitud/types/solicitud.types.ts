@@ -21,6 +21,13 @@ export type PublicDocumentStatus = "missing" | "uploaded" | "review_pending" | "
 
 export type PublicCreditResult = "approved" | "rejected";
 
+export type DemoCreditScenario =
+  | "pf-rejected-score"
+  | "pm-rejected-score"
+  | "no-credit-history"
+  | "pf-approved"
+  | "pm-approved";
+
 export interface CreditEvaluation {
   bureauHasHit: boolean;
   bureauScore: number | null;
@@ -97,6 +104,7 @@ export interface SolicitudFlowState {
   phoneVerified?: boolean;
   phoneVerifiedAt?: string;
   authorizationAccepted: boolean;
+  demoCreditScenario?: DemoCreditScenario;
   creditEvaluation?: CreditEvaluation;
   publicCreditResult?: PublicCreditResult;
   processingStartedAt?: string;

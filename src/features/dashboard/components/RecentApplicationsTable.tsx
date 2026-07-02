@@ -32,7 +32,7 @@ export function RecentApplicationsTable({ applications }: { applications: Applic
               <th className="py-3 pr-4">Tipo</th>
               <th className="py-3 pr-4">Estado</th>
               <th className="py-3 pr-4">Score</th>
-              <th className="py-3 pr-4">Línea</th>
+              <th className="py-3 pr-4">Línea sugerida por score</th>
               <th className="py-3 pr-4">Fecha</th>
               <th className="py-3 pr-0">Acción</th>
             </tr>
