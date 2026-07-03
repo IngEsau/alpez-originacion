@@ -1,5 +1,5 @@
 import type { AddressCatalogResult, SaveGeneralDataPayload, StatesCatalogResult } from "../../../services/api/onboarding.types";
-import type { BasicData, OnboardingGeneralData } from "../types/solicitud.types";
+import type { BasicData, FiscalIdentity, OnboardingGeneralData } from "../types/solicitud.types";
 
 export interface StateOption {
   id: string;
@@ -29,8 +29,6 @@ export const EMPTY_ONBOARDING_GENERAL_DATA: OnboardingGeneralData = {
   genero: "",
   telefono: "",
   correo: "",
-  rfc: "",
-  curp: "",
   estadoNacimientoId: null,
   direccion: "",
   numExt: "",
@@ -42,6 +40,13 @@ export const EMPTY_ONBOARDING_GENERAL_DATA: OnboardingGeneralData = {
   municipioNombre: "",
   coloniaId: "",
   coloniaNombre: "",
+};
+
+export const EMPTY_FISCAL_IDENTITY: FiscalIdentity = {
+  rfc: "",
+  curp: "",
+  source: "empty",
+  confirmed: false,
 };
 
 export const FALLBACK_STATES: StateOption[] = [
@@ -71,6 +76,12 @@ function cleanIdentityCode(value: string): string {
   return value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
 }
 
+function cleanOptionalIdentityCode(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const cleaned = cleanIdentityCode(String(value));
+  return cleaned || undefined;
+}
+
 export function normalizeGeneralDataInput(data: OnboardingGeneralData): OnboardingGeneralData {
   return {
     ...data,
@@ -80,8 +91,6 @@ export function normalizeGeneralDataInput(data: OnboardingGeneralData): Onboardi
     apellidoMaterno: toTitleCase(data.apellidoMaterno),
     telefono: onlyDigits(data.telefono).slice(0, 10),
     correo: data.correo.trim().toLowerCase(),
-    rfc: cleanIdentityCode(data.rfc).slice(0, 13),
-    curp: cleanIdentityCode(data.curp).slice(0, 18),
     codigoPostal: onlyDigits(data.codigoPostal).slice(0, 5),
     direccion: data.direccion.replace(/\s+/g, " ").trim(),
     numExt: data.numExt.replace(/\s+/g, " ").trim(),
@@ -89,16 +98,29 @@ export function normalizeGeneralDataInput(data: OnboardingGeneralData): Onboardi
   };
 }
 
-export function basicDataFromGeneralData(data: OnboardingGeneralData, companyName = ""): BasicData {
+export function normalizeFiscalIdentity(fiscalIdentity: FiscalIdentity): FiscalIdentity {
+  return {
+    ...fiscalIdentity,
+    rfc: cleanIdentityCode(fiscalIdentity.rfc).slice(0, 13),
+    curp: cleanIdentityCode(fiscalIdentity.curp).slice(0, 18),
+  };
+}
+
+export function basicDataFromGeneralData(
+  data: OnboardingGeneralData,
+  companyName = "",
+  fiscalIdentity: FiscalIdentity = EMPTY_FISCAL_IDENTITY,
+): BasicData {
   const nameParts = [data.primerNombre, data.segundoNombre, data.apellidoPaterno, data.apellidoMaterno].filter(Boolean);
+  const fiscal = normalizeFiscalIdentity(fiscalIdentity);
   return {
     fullName: nameParts.join(" "),
     representativeName: nameParts.join(" "),
     companyName,
     phone: data.telefono,
     email: data.correo,
-    rfc: data.rfc,
-    curp: data.curp,
+    rfc: fiscal.rfc,
+    curp: fiscal.curp,
   };
 }
 
@@ -112,9 +134,17 @@ export function generalDataFromBasicData(data: BasicData): OnboardingGeneralData
     apellidoMaterno: parts.length >= 3 ? parts[parts.length - 1] : "",
     telefono: data.phone,
     correo: data.email,
+  };
+}
+
+export function fiscalIdentityFromBasicData(data: BasicData): FiscalIdentity {
+  const fiscal = normalizeFiscalIdentity({
     rfc: data.rfc,
     curp: data.curp,
-  };
+    source: data.rfc || data.curp ? "manual" : "empty",
+    confirmed: Boolean(data.rfc && data.curp),
+  });
+  return fiscal.rfc || fiscal.curp ? fiscal : EMPTY_FISCAL_IDENTITY;
 }
 
 export function mapGeneralDataToBackendPayload(
@@ -132,8 +162,6 @@ export function mapGeneralDataToBackendPayload(
     genero: normalized.genero || "O",
     telefono: onlyDigits(normalized.telefono),
     correo: normalized.correo.trim().toLowerCase(),
-    rfc: normalized.rfc.trim().toUpperCase(),
-    curp: normalized.curp.trim().toUpperCase(),
     estado_nacimiento_id: Number(normalized.estadoNacimientoId),
     direccion: normalized.direccion.trim(),
     num_ext: normalized.numExt.trim(),
@@ -161,12 +189,6 @@ export function validateGeneralData(data: OnboardingGeneralData): Partial<Record
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized.correo)) {
     errors.correo = normalized.correo ? "Ingresa un correo válido." : "Ingresa tu correo.";
   }
-  if (normalized.rfc.length < 12 || normalized.rfc.length > 13) {
-    errors.rfc = "Revisa que el RFC tenga el formato correcto.";
-  }
-  if (normalized.curp.length !== 18) {
-    errors.curp = "Revisa que la CURP tenga 18 caracteres.";
-  }
   if (!normalized.estadoNacimientoId) errors.estadoNacimientoId = "Selecciona tu estado de nacimiento.";
   if (normalized.codigoPostal.length !== 5) errors.codigoPostal = "Ingresa un código postal válido.";
   if (!normalized.direccion) errors.direccion = "Ingresa la calle.";
@@ -180,6 +202,103 @@ export function validateGeneralData(data: OnboardingGeneralData): Partial<Record
 
 export function isGeneralDataComplete(data: OnboardingGeneralData): boolean {
   return Object.keys(validateGeneralData(data)).length === 0;
+}
+
+export function validateFiscalIdentity(fiscalIdentity: FiscalIdentity): Partial<Record<"rfc" | "curp", string>> {
+  const normalized = normalizeFiscalIdentity(fiscalIdentity);
+  const errors: Partial<Record<"rfc" | "curp", string>> = {};
+
+  if (normalized.rfc.length < 12 || normalized.rfc.length > 13) {
+    errors.rfc = "Revisa que el RFC tenga el formato correcto.";
+  }
+  if (normalized.curp.length !== 18) {
+    errors.curp = "Revisa que la CURP tenga 18 caracteres.";
+  }
+
+  return errors;
+}
+
+export function isFiscalIdentityComplete(fiscalIdentity: FiscalIdentity): boolean {
+  return Object.keys(validateFiscalIdentity(fiscalIdentity)).length === 0;
+}
+
+function readNestedRecord(source: unknown, path: string[]): unknown {
+  return path.reduce<unknown>((current, key) => {
+    if (!current || typeof current !== "object") return undefined;
+    return (current as Record<string, unknown>)[key];
+  }, source);
+}
+
+export function extractFiscalIdentityFromGeneralDataResponse(response: unknown): Partial<Pick<FiscalIdentity, "rfc" | "curp">> {
+  const data = response && typeof response === "object" && "data" in response
+    ? (response as { data?: unknown }).data
+    : response;
+
+  const rfc =
+    cleanOptionalIdentityCode(readNestedRecord(data, ["rfc"])) ??
+    cleanOptionalIdentityCode(readNestedRecord(data, ["fiscal", "rfc"])) ??
+    cleanOptionalIdentityCode(readNestedRecord(data, ["identificacion_fiscal", "rfc"]));
+  const curp =
+    cleanOptionalIdentityCode(readNestedRecord(data, ["curp"])) ??
+    cleanOptionalIdentityCode(readNestedRecord(data, ["fiscal", "curp"])) ??
+    cleanOptionalIdentityCode(readNestedRecord(data, ["identificacion_fiscal", "curp"]));
+
+  return {
+    ...(rfc ? { rfc } : {}),
+    ...(curp ? { curp } : {}),
+  };
+}
+
+export function resolveFiscalIdentityAfterGeneralData(input: {
+  response: unknown;
+  ocrFiscalIdentity?: Partial<Pick<FiscalIdentity, "rfc" | "curp">>;
+  current?: FiscalIdentity;
+}): FiscalIdentity {
+  const current = input.current ? normalizeFiscalIdentity(input.current) : EMPTY_FISCAL_IDENTITY;
+  if (current.source === "manual") return current;
+
+  const backend = extractFiscalIdentityFromGeneralDataResponse(input.response);
+  const backendRfc = backend.rfc || "";
+  const backendCurp = backend.curp || "";
+  if (backendRfc || backendCurp) {
+    return normalizeFiscalIdentity({
+      rfc: backendRfc || current.rfc,
+      curp: backendCurp || current.curp,
+      source: "backend",
+      confirmed: false,
+    });
+  }
+
+  const ocrRfc = input.ocrFiscalIdentity?.rfc || "";
+  const ocrCurp = input.ocrFiscalIdentity?.curp || "";
+  if (ocrRfc || ocrCurp) {
+    return normalizeFiscalIdentity({
+      rfc: current.rfc || ocrRfc,
+      curp: current.curp || ocrCurp,
+      source: current.rfc || current.curp ? current.source : "ocr",
+      confirmed: false,
+    });
+  }
+
+  return current.rfc || current.curp ? current : EMPTY_FISCAL_IDENTITY;
+}
+
+export function mockFiscalIdentityFromGeneralData(data: OnboardingGeneralData): Partial<Pick<FiscalIdentity, "rfc" | "curp">> {
+  const normalized = normalizeGeneralDataInput(data);
+  if (!normalized.primerNombre || !normalized.apellidoPaterno || !normalized.fechaNacimiento || !normalized.genero) {
+    return {};
+  }
+  const date = normalized.fechaNacimiento.replace(/-/g, "").slice(2);
+  const first = normalized.primerNombre[0] ?? "X";
+  const paternal = normalized.apellidoPaterno.slice(0, 2).padEnd(2, "X");
+  const maternal = normalized.apellidoMaterno[0] ?? "X";
+  const base = `${paternal}${maternal}${first}${date}`.toUpperCase().replace(/Ñ/g, "X");
+  const gender = normalized.genero === "F" ? "M" : "H";
+
+  return {
+    rfc: `${base}XXX`.slice(0, 13),
+    curp: `${base}${gender}PLXXXA00`.slice(0, 18),
+  };
 }
 
 function readString(record: Record<string, unknown>, keys: string[]): string {

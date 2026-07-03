@@ -8,6 +8,7 @@ export type SolicitudStep =
   | "ine"
   | "revision_ine"
   | "datos_basicos"
+  | "fiscal_identity"
   | "datos_negocio"
   | "monto"
   | "documentos"
@@ -80,8 +81,6 @@ export interface OnboardingGeneralData {
   genero: GeneralDataGender;
   telefono: string;
   correo: string;
-  rfc: string;
-  curp: string;
   estadoNacimientoId: number | null;
   direccion: string;
   numExt: string;
@@ -93,6 +92,15 @@ export interface OnboardingGeneralData {
   municipioNombre: string;
   coloniaId: string;
   coloniaNombre: string;
+}
+
+export type FiscalIdentitySource = "backend" | "ocr" | "manual" | "empty";
+
+export interface FiscalIdentity {
+  rfc: string;
+  curp: string;
+  source: FiscalIdentitySource;
+  confirmed: boolean;
 }
 
 export interface BusinessData {
@@ -127,6 +135,7 @@ export interface SolicitudFlowState {
   ineReviewed: boolean;
   basicData: BasicData;
   generalData: OnboardingGeneralData;
+  fiscalIdentity: FiscalIdentity;
   businessData: BusinessData;
   requestedAmount?: number;
   documents: SolicitudDocument[];

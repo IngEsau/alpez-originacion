@@ -104,7 +104,7 @@ export function DashboardLayout() {
             </Button>
             <div className="hidden text-right md:block">
               <p className="text-sm font-semibold text-slate-950">{user?.name ?? "Ejecutivo Demo"}</p>
-              <p className="text-xs text-slate-500">Administrador demo</p>
+              <p className="text-xs text-slate-500">Administrador</p>
             </div>
             <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" type="button" onClick={logout}>
               <LogOut className="h-5 w-5" />

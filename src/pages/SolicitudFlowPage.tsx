@@ -27,6 +27,7 @@ import {
   saveBasicData,
   saveBusinessData,
   saveDocumentFile,
+  saveFiscalIdentity,
   saveIneFile,
   saveRequestedAmount,
   sendPhoneVerificationCode,
@@ -42,6 +43,7 @@ import { getAddressCatalogByZipCode, getStateCatalog } from "../features/onboard
 import type {
   ApplicantKind,
   BusinessData,
+  FiscalIdentity,
   OnboardingGeneralData,
   SolicitudDocument,
   SolicitudFlowState,
@@ -53,14 +55,17 @@ import { demoScenarioPersonTypeWarning, parseDemoCreditScenario } from "../featu
 import { isRequestedAmountInDemoRange, MAX_REQUESTED_AMOUNT, MIN_REQUESTED_AMOUNT } from "../features/solicitud/utils/requestedAmount";
 import {
   FALLBACK_STATES,
+  isFiscalIdentityComplete,
   isGeneralDataComplete,
   mapAddressCatalog,
   mapStatesCatalog,
   normalizeGeneralDataInput,
+  normalizeFiscalIdentity,
   onlyDigits,
   type ColonyOption,
   type StateOption,
   toTitleCase,
+  validateFiscalIdentity,
   validateGeneralData,
 } from "../features/solicitud/utils/generalData";
 import { Button } from "../shared/components/Button";
@@ -69,7 +74,7 @@ import { Select } from "../shared/components/Select";
 import { fileToBase64 } from "../shared/lib/fileToBase64";
 import { cx } from "../shared/lib/formatters";
 
-const TOTAL_STEPS = 12;
+const TOTAL_STEPS = 13;
 const AMOUNT_OPTIONS = [10000, 20000, 30000, 40000, 60000, 120000];
 
 const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number> = {
@@ -77,13 +82,14 @@ const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number
   ine: 3,
   revision_ine: 4,
   datos_basicos: 5,
-  datos_negocio: 6,
-  monto: 7,
-  documentos: 8,
-  phone_verification: 9,
-  autorizacion: 10,
-  resumen: 11,
-  processing: 12,
+  fiscal_identity: 6,
+  datos_negocio: 7,
+  monto: 8,
+  documentos: 9,
+  phone_verification: 10,
+  autorizacion: 11,
+  resumen: 12,
+  processing: 13,
 };
 
 function money(value: number): string {
@@ -302,25 +308,9 @@ function GeneralDataFields({
       </GeneralDataSection>
 
       <GeneralDataSection title="Identificación">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input
-            className="h-12 text-base"
-            error={errors.rfc}
-            label="RFC"
-            maxLength={13}
-            value={value.rfc}
-            onChange={(event) => patch("rfc", event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())}
-          />
-          <Input
-            className="h-12 text-base"
-            error={errors.curp}
-            label="CURP"
-            maxLength={18}
-            value={value.curp}
-            onChange={(event) => patch("curp", event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())}
-          />
+        <div className="grid gap-4">
           <Select
-            className="h-12 text-base sm:col-span-2"
+            className="h-12 text-base"
             error={errors.estadoNacimientoId}
             label="Estado de nacimiento"
             options={stateSelectOptions}
@@ -401,6 +391,44 @@ function GeneralDataFields({
           )}
         </div>
       </GeneralDataSection>
+    </div>
+  );
+}
+
+function FiscalIdentityFields({
+  value,
+  onChange,
+}: {
+  value: FiscalIdentity;
+  onChange: (value: FiscalIdentity) => void;
+}) {
+  const errors = validateFiscalIdentity(value);
+  const patch = (field: "rfc" | "curp", fieldValue: string) =>
+    onChange({
+      ...value,
+      [field]: fieldValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase(),
+      source: "manual",
+      confirmed: false,
+    });
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Input
+        className="h-12 text-base"
+        error={errors.rfc}
+        label="RFC"
+        maxLength={13}
+        value={value.rfc}
+        onChange={(event) => patch("rfc", event.target.value)}
+      />
+      <Input
+        className="h-12 text-base"
+        error={errors.curp}
+        label="CURP"
+        maxLength={18}
+        value={value.curp}
+        onChange={(event) => patch("curp", event.target.value)}
+      />
     </div>
   );
 }
@@ -834,7 +862,7 @@ export function SolicitudFlowPage() {
       <QuestionScreen
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
-        title={flow.applicantKind === "company" ? "Cuéntanos sobre la empresa" : "Cuéntanos sobre ti"}
+        title={flow.applicantKind === "company" ? "Datos del representante legal" : "Cuéntanos sobre ti"}
         description="Usaremos estos datos para identificar tu solicitud."
         actions={
           <>
@@ -876,6 +904,57 @@ export function SolicitudFlowPage() {
     );
   }
 
+  if (flow.currentStep === "fiscal_identity") {
+    const hasPrefill = flow.fiscalIdentity.source === "backend" || flow.fiscalIdentity.source === "ocr";
+    const isEmpty = !flow.fiscalIdentity.rfc && !flow.fiscalIdentity.curp;
+
+    return (
+      <QuestionScreen
+        step={stepNumber}
+        totalSteps={TOTAL_STEPS}
+        title={flow.applicantKind === "company" ? "Confirma los datos fiscales del representante" : "Confirma tu RFC y CURP"}
+        description="Usaremos estos datos para continuar con la revisión de tu solicitud."
+        actions={
+          <>
+            <Button
+              icon={<ArrowLeft className="h-4 w-4" />}
+              type="button"
+              variant="outline"
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "datos_basicos"))}
+            >
+              Atrás
+            </Button>
+            <Button
+              disabled={!isFiscalIdentityComplete(flow.fiscalIdentity)}
+              icon={<ArrowRight className="h-4 w-4" />}
+              loading={saving}
+              size="lg"
+              type="button"
+              onClick={() => runAction(() => saveFiscalIdentity(flow.flowId, normalizeFiscalIdentity(flow.fiscalIdentity)))}
+            >
+              Continuar
+            </Button>
+          </>
+        }
+      >
+        {hasPrefill && (
+          <p className="mb-4 rounded-[8px] bg-[#F5FAFF] px-4 py-3 text-sm leading-6 text-slate-600">
+            Prellenamos estos datos con la información capturada. Revísalos antes de continuar.
+          </p>
+        )}
+        {isEmpty && (
+          <p className="mb-4 rounded-[8px] bg-[#F5FAFF] px-4 py-3 text-sm leading-6 text-slate-600">
+            No pudimos completar estos datos automáticamente. Puedes capturarlos manualmente.
+          </p>
+        )}
+        <FiscalIdentityFields
+          value={flow.fiscalIdentity}
+          onChange={(fiscalIdentity) => setFlow({ ...flow, fiscalIdentity })}
+        />
+      </QuestionScreen>
+    );
+  }
+
   if (flow.currentStep === "datos_negocio") {
     return (
       <QuestionScreen
@@ -889,7 +968,7 @@ export function SolicitudFlowPage() {
               icon={<ArrowLeft className="h-4 w-4" />}
               type="button"
               variant="outline"
-              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "datos_basicos"))}
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "fiscal_identity"))}
             >
               Atrás
             </Button>
@@ -1562,6 +1641,12 @@ export function SolicitudFlowPage() {
     flow.applicantKind === "company"
       ? flow.basicData.companyName || flow.basicData.representativeName
       : flow.basicData.fullName;
+  const fiscalSummaryRows = flow.fiscalIdentity.confirmed
+    ? [
+        ["RFC", flow.fiscalIdentity.rfc || "Sin capturar"],
+        ["CURP", flow.fiscalIdentity.curp || "Sin capturar"],
+      ]
+    : [];
 
   return (
     <QuestionScreen
@@ -1597,6 +1682,7 @@ export function SolicitudFlowPage() {
           ["Nombre", displayName || "Sin capturar"],
           ["Teléfono", flow.basicData.phone || "Sin capturar"],
           ["Correo", flow.basicData.email || "Sin capturar"],
+          ...fiscalSummaryRows,
           ["Monto", money(flow.requestedAmount ?? 0)],
           ["Documentos", `${docsSummary.added} agregados, ${docsSummary.pending} faltantes`],
           ["Celular", flow.phoneVerified ? "Verificado" : "Pendiente"],

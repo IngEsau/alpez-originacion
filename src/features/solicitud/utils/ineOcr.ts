@@ -1,5 +1,5 @@
-import type { OnboardingGeneralData } from "../types/solicitud.types";
-import { EMPTY_ONBOARDING_GENERAL_DATA, normalizeGeneralDataInput, toTitleCase } from "./generalData";
+import type { FiscalIdentity, OnboardingGeneralData } from "../types/solicitud.types";
+import { EMPTY_ONBOARDING_GENERAL_DATA, normalizeGeneralDataInput, normalizeFiscalIdentity, toTitleCase } from "./generalData";
 
 export { toTitleCase } from "./generalData";
 
@@ -104,8 +104,6 @@ export function mapIneOcrToGeneralData(ocr: unknown): Partial<OnboardingGeneralD
   const municipality = cleanText(findValueByAliases(ocr, KEY_ALIASES.municipality));
   const neighborhood = cleanText(findValueByAliases(ocr, KEY_ALIASES.neighborhood));
 
-  if (curp) result.curp = curp;
-  if (rfc) result.rfc = rfc;
   if (birthDate) result.fechaNacimiento = birthDate;
   if (gender) result.genero = gender;
   if (address) result.direccion = toTitleCase(address);
@@ -115,6 +113,16 @@ export function mapIneOcrToGeneralData(ocr: unknown): Partial<OnboardingGeneralD
   if (neighborhood) result.coloniaNombre = toTitleCase(neighborhood);
 
   return result;
+}
+
+export function extractFiscalIdentityFromOcr(ocr: unknown): Partial<Pick<FiscalIdentity, "rfc" | "curp">> {
+  const curp = cleanIdentityCode(findValueByAliases(ocr, KEY_ALIASES.curp));
+  const rfc = cleanIdentityCode(findValueByAliases(ocr, KEY_ALIASES.rfc));
+
+  return {
+    ...(rfc ? { rfc } : {}),
+    ...(curp ? { curp } : {}),
+  };
 }
 
 export function applyIneOcrToGeneralData(
@@ -134,4 +142,14 @@ export function applyIneOcrToGeneralData(
   }
 
   return { generalData: normalizeGeneralDataInput(nextData), prefilledFields };
+}
+
+export function fiscalIdentityFromOcr(ocr: unknown): FiscalIdentity {
+  const fiscal = normalizeFiscalIdentity({
+    rfc: extractFiscalIdentityFromOcr(ocr).rfc ?? "",
+    curp: extractFiscalIdentityFromOcr(ocr).curp ?? "",
+    source: "ocr",
+    confirmed: false,
+  });
+  return fiscal.rfc || fiscal.curp ? fiscal : { rfc: "", curp: "", source: "empty", confirmed: false };
 }

@@ -18,6 +18,7 @@ import type {
   BasicData,
   BusinessData,
   DemoCreditScenario,
+  FiscalIdentity,
   OnboardingGeneralData,
   PhoneVerificationState,
   SolicitudDocument,
@@ -44,12 +45,16 @@ import {
 import { resolveDemoCreditScenario } from "../utils/demoCreditScenario";
 import {
   basicDataFromGeneralData,
+  EMPTY_FISCAL_IDENTITY,
   EMPTY_ONBOARDING_GENERAL_DATA,
+  fiscalIdentityFromBasicData,
   generalDataFromBasicData,
   mapGeneralDataToBackendPayload,
   normalizeGeneralDataInput,
+  normalizeFiscalIdentity,
+  resolveFiscalIdentityAfterGeneralData,
 } from "../utils/generalData";
-import { applyIneOcrToGeneralData } from "../utils/ineOcr";
+import { applyIneOcrToGeneralData, extractFiscalIdentityFromOcr, fiscalIdentityFromOcr } from "../utils/ineOcr";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
 const DEMO_OTP_CODE = "123456";
@@ -398,14 +403,18 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
   const generalData = flow.generalData
     ? normalizeGeneralDataInput(flow.generalData)
     : generalDataFromBasicData(flow.basicData);
+  const fiscalIdentity = flow.fiscalIdentity
+    ? normalizeFiscalIdentity(flow.fiscalIdentity)
+    : fiscalIdentityFromBasicData(flow.basicData);
   const basicData = {
     ...flow.basicData,
-    ...basicDataFromGeneralData(generalData, flow.basicData.companyName),
+    ...basicDataFromGeneralData(generalData, flow.basicData.companyName, fiscalIdentity),
   };
   if (flow.backendDocumentsLoaded) {
     return {
       ...flow,
       generalData,
+      fiscalIdentity,
       basicData,
       phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),
     };
@@ -417,6 +426,7 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
   return {
     ...flow,
     generalData,
+    fiscalIdentity,
     basicData,
     phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),
     documents: normalizedDocuments.map((document) => ({
@@ -465,6 +475,7 @@ export async function createSolicitudFlow(demoCreditScenario?: DemoCreditScenari
     ineReviewed: false,
     basicData: EMPTY_BASIC_DATA,
     generalData: EMPTY_ONBOARDING_GENERAL_DATA,
+    fiscalIdentity: EMPTY_FISCAL_IDENTITY,
     businessData: EMPTY_BUSINESS_DATA,
     documents: documentsForKind(),
     phoneVerification: phoneVerificationForPhone(""),
@@ -552,13 +563,17 @@ export async function confirmIneReview(flowId: string, accepted: boolean): Promi
     onboardingResult?.ocr,
   );
   const nextGeneralData = accepted ? ocrPrefill.generalData : flow.generalData;
+  const currentFiscalIdentity = flow.fiscalIdentity ?? EMPTY_FISCAL_IDENTITY;
+  const ocrFiscalIdentity = accepted ? fiscalIdentityFromOcr(onboardingResult?.ocr) : currentFiscalIdentity;
+  const nextFiscalIdentity = ocrFiscalIdentity.source !== "empty" ? ocrFiscalIdentity : currentFiscalIdentity;
   const nextFlow = saveFlow({
     ...flow,
     ineReviewed: accepted,
     backendTraceId: onboardingResult?.trace_id ?? flow.backendTraceId,
     ineOcr: onboardingResult?.ocr ?? flow.ineOcr,
     generalData: nextGeneralData,
-    basicData: accepted ? basicDataFromGeneralData(nextGeneralData, flow.basicData.companyName) : flow.basicData,
+    fiscalIdentity: nextFiscalIdentity,
+    basicData: accepted ? basicDataFromGeneralData(nextGeneralData, flow.basicData.companyName, nextFiscalIdentity) : flow.basicData,
     ocrPrefillFields: accepted && ocrPrefill.prefilledFields.length > 0
       ? Array.from(new Set([...(flow.ocrPrefillFields ?? []), ...ocrPrefill.prefilledFields]))
       : flow.ocrPrefillFields,
@@ -575,18 +590,51 @@ export async function saveBasicData(flowId: string, generalData: OnboardingGener
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
   const normalizedGeneralData = normalizeGeneralDataInput(generalData);
-  await saveOnboardingGeneralData(mapGeneralDataToBackendPayload(normalizedGeneralData, backendTraceIdOrThrow(flow)));
-  const basicData = basicDataFromGeneralData(normalizedGeneralData, flow.basicData.companyName);
+  const response = await saveOnboardingGeneralData(mapGeneralDataToBackendPayload(normalizedGeneralData, backendTraceIdOrThrow(flow)));
+  const fiscalIdentity = resolveFiscalIdentityAfterGeneralData({
+    response,
+    ocrFiscalIdentity: extractFiscalIdentityFromOcr(flow.ineOcr),
+    current: flow.fiscalIdentity ?? fiscalIdentityFromBasicData(flow.basicData),
+  });
+  const basicData = basicDataFromGeneralData(normalizedGeneralData, flow.basicData.companyName, fiscalIdentity);
   const nextFlow = saveFlow({
     ...flow,
     generalData: normalizedGeneralData,
+    fiscalIdentity,
     basicData,
-    currentStep: "datos_negocio",
+    currentStep: "fiscal_identity",
     phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),
     phoneVerified: flow.phoneVerification?.phone === digitsOnly(basicData.phone) ? flow.phoneVerified : false,
     phoneVerifiedAt: flow.phoneVerification?.phone === digitsOnly(basicData.phone) ? flow.phoneVerifiedAt : undefined,
   });
   await addPublicEvent(nextFlow, "datos_basicos_capturados", "Datos básicos capturados", "datos_basicos");
+  await addPublicEvent(nextFlow, "general_data_saved", "Datos generales guardados", "datos_basicos");
+  if (fiscalIdentity.source === "backend") {
+    await addPublicEvent(nextFlow, "fiscal_identity_received", "Datos fiscales recibidos", "fiscal_identity");
+  }
+  return nextFlow;
+}
+
+export async function saveFiscalIdentity(flowId: string, fiscalIdentity: FiscalIdentity): Promise<SolicitudFlowState> {
+  await wait();
+  const flow = readStore().find((item) => item.flowId === flowId);
+  if (!flow) throw new Error("No encontramos esta solicitud.");
+  const normalizedFiscalIdentity = normalizeFiscalIdentity({
+    ...fiscalIdentity,
+    source: fiscalIdentity.source === "empty" ? "manual" : fiscalIdentity.source,
+    confirmed: true,
+  });
+  const basicData = basicDataFromGeneralData(flow.generalData, flow.basicData.companyName, normalizedFiscalIdentity);
+  const nextFlow = saveFlow({
+    ...flow,
+    fiscalIdentity: normalizedFiscalIdentity,
+    basicData,
+    currentStep: "datos_negocio",
+  });
+  await addPublicEvent(nextFlow, "fiscal_identity_confirmed", "Datos fiscales confirmados", "fiscal_identity");
+  if (normalizedFiscalIdentity.source === "manual") {
+    await addPublicEvent(nextFlow, "fiscal_identity_completed_manually", "Datos fiscales capturados", "fiscal_identity");
+  }
   return nextFlow;
 }
 

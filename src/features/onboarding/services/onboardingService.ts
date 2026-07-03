@@ -102,6 +102,20 @@ function mockTraceId(flowId: string): string {
   return `MOCK-${flowId}`;
 }
 
+function mockFiscalIdentityFromGeneralPayload(payload: SaveGeneralDataPayload): { rfc?: string; curp?: string } {
+  if (!payload.primer_nombre || !payload.apellido_paterno || !payload.fecha_nacimiento || !payload.genero) return {};
+  const date = payload.fecha_nacimiento.replace(/-/g, "").slice(2);
+  const first = payload.primer_nombre[0] ?? "X";
+  const paternal = payload.apellido_paterno.slice(0, 2).padEnd(2, "X");
+  const maternal = payload.apellido_materno?.[0] ?? "X";
+  const base = `${paternal}${maternal}${first}${date}`.toUpperCase().replace(/Ñ/g, "X").replace(/[^A-Z0-9]/g, "X");
+  const gender = payload.genero === "F" ? "M" : "H";
+  return {
+    rfc: `${base}XXX`.slice(0, 13),
+    curp: `${base}${gender}${String(payload.estado_nacimiento_id).padStart(2, "0")}XXXA00`.slice(0, 18),
+  };
+}
+
 const knownDocumentTypes = new Set<DocumentType>([
   "ine_titular",
   "curp",
@@ -166,7 +180,7 @@ export async function saveOnboardingGeneralData(payload: SaveGeneralDataPayload)
   return withApiFallback(
     "saveGeneralData",
     () => saveGeneralData(payload),
-    () => ({ trace_id: payload.trace_id, message: "Datos guardados." }),
+    () => ({ trace_id: payload.trace_id, message: "Datos guardados.", data: mockFiscalIdentityFromGeneralPayload(payload) }),
   );
 }
 

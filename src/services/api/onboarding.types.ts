@@ -35,9 +35,6 @@ export interface SaveGeneralDataPayload {
   telefono: string;
   correo: string;
 
-  rfc: string;
-  curp: string;
-
   estado_nacimiento_id: number;
 
   direccion: string;
