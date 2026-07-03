@@ -13,8 +13,7 @@ export function PortalPage() {
     <div className="flex min-h-screen flex-col">
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 lg:px-6">
         <div className="flex items-center gap-3">
-          <AlpezLogo className="h-10 w-10 rounded-[10px]" />
-          <span className="text-lg font-bold text-slate-950">ALPEZ</span>
+          <AlpezLogo className="h-16 sm:h-20" variant="horizontal" />
         </div>
         <div className="flex items-center gap-2">
         <Button
@@ -39,7 +38,7 @@ export function PortalPage() {
 
       <section className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="max-w-2xl text-center">
-          <AlpezLogo className="mx-auto mb-6 h-16 w-16 rounded-2xl" />
+          <AlpezLogo className="mx-auto mb-8 h-32 sm:h-40" variant="horizontal" />
           <h1 className="text-4xl font-bold leading-tight text-slate-950 sm:text-6xl">
             Solicita tu línea de crédito en minutos
           </h1>

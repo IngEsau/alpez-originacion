@@ -23,17 +23,18 @@ import type {
   StatesCatalogResult,
   UploadDocumentResult,
 } from "../../../services/api/onboarding.types";
+import { FALLBACK_STATES } from "../../solicitud/utils/generalData";
 
-export function isRealApiEnabled(value = import.meta.env.VITE_USE_REAL_API): boolean {
+export function isRealApiEnabled(value?: string): boolean {
   return value === "true";
 }
 
-export function isApiFallbackEnabled(value = import.meta.env.VITE_API_FALLBACK_TO_MOCK): boolean {
+export function isApiFallbackEnabled(value?: string): boolean {
   return value === "true";
 }
 
-export const USE_REAL_API = isRealApiEnabled();
-export const API_FALLBACK_TO_MOCK = isApiFallbackEnabled();
+export const USE_REAL_API = isRealApiEnabled(import.meta.env.VITE_USE_REAL_API);
+export const API_FALLBACK_TO_MOCK = isApiFallbackEnabled(import.meta.env.VITE_API_FALLBACK_TO_MOCK);
 
 type MockFallback<T> = () => T | Promise<T>;
 
@@ -52,6 +53,9 @@ function friendlyErrorMessage(operation: string): string {
   }
   if (operation === "startOnboarding") {
     return "No pudimos iniciar la solicitud en este momento. Intenta nuevamente.";
+  }
+  if (operation === "saveGeneralData") {
+    return "No pudimos guardar tus datos. Intenta nuevamente.";
   }
   return "No pudimos guardar este paso. Intenta nuevamente.";
 }
@@ -220,7 +224,16 @@ export function getAddressCatalogByZipCode(cp: string): Promise<AddressCatalogRe
   return withApiFallback(
     "getAddressByZipCode",
     () => getAddressByZipCode(cp),
-    () => ({ codigo_postal: cp, estado: "", municipio: "", colonias: [] }),
+    () => cp === "72595"
+      ? {
+          codigo_postal: cp,
+          estado: "Puebla",
+          estado_id: "21",
+          municipio: "Puebla",
+          municipio_id: "114",
+          colonias: ["Artículo Primero", "San Francisco Totimehuacan"],
+        }
+      : { codigo_postal: cp, estado: "", municipio: "", colonias: [] },
   );
 }
 
@@ -228,6 +241,6 @@ export function getStateCatalog(): Promise<StatesCatalogResult> {
   return withApiFallback(
     "getStates",
     () => getStates(),
-    () => ({ estados: [] }),
+    () => ({ estados: FALLBACK_STATES.map((state) => ({ id: state.id, nombre: state.name })) }),
   );
 }

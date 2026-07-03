@@ -12,6 +12,7 @@ import {
   Trash2,
   User,
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChoiceCard } from "../features/solicitud/components/ChoiceCard";
@@ -37,10 +38,11 @@ import {
   updateSolicitudStep,
   verifyPhoneCode,
 } from "../features/solicitud/services/solicitudFlowService";
+import { getAddressCatalogByZipCode, getStateCatalog } from "../features/onboarding/services/onboardingService";
 import type {
   ApplicantKind,
-  BasicData,
   BusinessData,
+  OnboardingGeneralData,
   SolicitudDocument,
   SolicitudFlowState,
   SolicitudStep,
@@ -49,8 +51,21 @@ import type {
 import { PUBLIC_DOCUMENT_STATUS_LABELS } from "../features/solicitud/types/solicitud.types";
 import { demoScenarioPersonTypeWarning, parseDemoCreditScenario } from "../features/solicitud/utils/demoCreditScenario";
 import { isRequestedAmountInDemoRange, MAX_REQUESTED_AMOUNT, MIN_REQUESTED_AMOUNT } from "../features/solicitud/utils/requestedAmount";
+import {
+  FALLBACK_STATES,
+  isGeneralDataComplete,
+  mapAddressCatalog,
+  mapStatesCatalog,
+  normalizeGeneralDataInput,
+  onlyDigits,
+  type ColonyOption,
+  type StateOption,
+  toTitleCase,
+  validateGeneralData,
+} from "../features/solicitud/utils/generalData";
 import { Button } from "../shared/components/Button";
 import { Input } from "../shared/components/Input";
+import { Select } from "../shared/components/Select";
 import { fileToBase64 } from "../shared/lib/fileToBase64";
 import { cx } from "../shared/lib/formatters";
 
@@ -160,117 +175,232 @@ function FilePreview({ file }: { file?: StoredFile }) {
 }
 
 function canContinueBasicData(flow: SolicitudFlowState): boolean {
-  if (flow.applicantKind === "company") {
-    return Boolean(
-      flow.basicData.companyName.trim() &&
-        flow.basicData.representativeName.trim() &&
-        flow.basicData.phone.trim() &&
-        flow.basicData.email.trim() &&
-        flow.basicData.rfc.trim(),
-    );
-  }
-
-  return Boolean(
-    flow.basicData.fullName.trim() &&
-      flow.basicData.phone.trim() &&
-      flow.basicData.email.trim() &&
-      flow.basicData.rfc.trim() &&
-      flow.basicData.curp.trim(),
-  );
+  return isGeneralDataComplete(flow.generalData);
 }
 
 function canContinueBusinessData(data: BusinessData): boolean {
   return Boolean(data.activity.trim() && data.seniorityYears.trim() && data.monthlyIncome.trim());
 }
 
-function BasicDataFields({
-  applicantKind,
+function GeneralDataSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-[8px] border border-slate-200 bg-white p-4">
+      <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-500">{title}</h2>
+      <div className="grid gap-4">{children}</div>
+    </section>
+  );
+}
+
+function GeneralDataFields({
   value,
   onChange,
+  stateOptions,
+  colonyOptions,
+  zipMessage,
+  zipLoading,
 }: {
-  applicantKind?: ApplicantKind;
-  value: BasicData;
-  onChange: (value: BasicData) => void;
+  value: OnboardingGeneralData;
+  onChange: (value: OnboardingGeneralData) => void;
+  stateOptions: StateOption[];
+  colonyOptions: ColonyOption[];
+  zipMessage?: string;
+  zipLoading?: boolean;
 }) {
-  const patch = (field: keyof BasicData, fieldValue: string) => onChange({ ...value, [field]: fieldValue });
+  const errors = validateGeneralData(value);
+  const patch = (field: keyof OnboardingGeneralData, fieldValue: string | number | null) =>
+    onChange({ ...value, [field]: fieldValue });
+  const normalizeNameField = (field: keyof Pick<OnboardingGeneralData, "primerNombre" | "segundoNombre" | "apellidoPaterno" | "apellidoMaterno">) =>
+    patch(field, toTitleCase(String(value[field])));
+  const stateSelectOptions = [
+    { label: "Selecciona una opción", value: "" },
+    ...stateOptions.map((state) => ({ label: state.name, value: state.id })),
+  ];
+  const colonySelectOptions = [
+    { label: "Selecciona colonia", value: "" },
+    ...colonyOptions.map((colony) => ({ label: colony.name, value: colony.id })),
+  ];
 
-  if (applicantKind === "company") {
-    return (
-      <div className="grid gap-4">
-        <Input
-          className="h-12 text-base"
-          label="Nombre de la empresa"
-          value={value.companyName}
-          onChange={(event) => patch("companyName", event.target.value)}
-        />
-        <Input
-          className="h-12 text-base"
-          label="Nombre del representante"
-          value={value.representativeName}
-          onChange={(event) => patch("representativeName", event.target.value)}
-        />
+  return (
+    <div className="grid gap-5">
+      <GeneralDataSection title="Datos personales">
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
             className="h-12 text-base"
-            label="Teléfono"
-            value={value.phone}
-            onChange={(event) => patch("phone", event.target.value)}
+            error={errors.primerNombre}
+            label="Primer nombre"
+            value={value.primerNombre}
+            onChange={(event) => patch("primerNombre", event.target.value)}
+            onBlur={() => normalizeNameField("primerNombre")}
           />
           <Input
             className="h-12 text-base"
-            label="Correo"
-            type="email"
-            value={value.email}
-            onChange={(event) => patch("email", event.target.value)}
+            label="Segundo nombre"
+            value={value.segundoNombre}
+            onChange={(event) => patch("segundoNombre", event.target.value)}
+            onBlur={() => normalizeNameField("segundoNombre")}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.apellidoPaterno}
+            label="Apellido paterno"
+            value={value.apellidoPaterno}
+            onChange={(event) => patch("apellidoPaterno", event.target.value)}
+            onBlur={() => normalizeNameField("apellidoPaterno")}
+          />
+          <Input
+            className="h-12 text-base"
+            label="Apellido materno"
+            value={value.apellidoMaterno}
+            onChange={(event) => patch("apellidoMaterno", event.target.value)}
+            onBlur={() => normalizeNameField("apellidoMaterno")}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.fechaNacimiento}
+            label="Fecha de nacimiento"
+            type="date"
+            value={value.fechaNacimiento}
+            onChange={(event) => patch("fechaNacimiento", event.target.value)}
+          />
+          <Select
+            className="h-12 text-base"
+            error={errors.genero}
+            label="Género"
+            options={[
+              { label: "Selecciona una opción", value: "" },
+              { label: "Masculino", value: "M" },
+              { label: "Femenino", value: "F" },
+              { label: "Otro / Prefiero no decirlo", value: "O" },
+            ]}
+            value={value.genero}
+            onChange={(event) => patch("genero", event.target.value)}
           />
         </div>
-        <Input
-          className="h-12 text-base"
-          label="RFC"
-          value={value.rfc}
-          onChange={(event) => patch("rfc", event.target.value.toUpperCase())}
-        />
-      </div>
-    );
-  }
+      </GeneralDataSection>
 
-  return (
-    <div className="grid gap-4">
-      <Input
-        className="h-12 text-base"
-        label="Nombre completo"
-        value={value.fullName}
-        onChange={(event) => patch("fullName", event.target.value)}
-      />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          className="h-12 text-base"
-          label="Teléfono"
-          value={value.phone}
-          onChange={(event) => patch("phone", event.target.value)}
-        />
-        <Input
-          className="h-12 text-base"
-          label="Correo"
-          type="email"
-          value={value.email}
-          onChange={(event) => patch("email", event.target.value)}
-        />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          className="h-12 text-base"
-          label="RFC"
-          value={value.rfc}
-          onChange={(event) => patch("rfc", event.target.value.toUpperCase())}
-        />
-        <Input
-          className="h-12 text-base"
-          label="CURP"
-          value={value.curp}
-          onChange={(event) => patch("curp", event.target.value.toUpperCase())}
-        />
-      </div>
+      <GeneralDataSection title="Contacto">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            className="h-12 text-base"
+            error={errors.telefono}
+            inputMode="numeric"
+            label="Celular"
+            maxLength={10}
+            value={value.telefono}
+            onChange={(event) => patch("telefono", onlyDigits(event.target.value).slice(0, 10))}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.correo}
+            label="Correo electrónico"
+            type="email"
+            value={value.correo}
+            onChange={(event) => patch("correo", event.target.value)}
+            onBlur={() => patch("correo", value.correo.trim().toLowerCase())}
+          />
+        </div>
+      </GeneralDataSection>
+
+      <GeneralDataSection title="Identificación">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            className="h-12 text-base"
+            error={errors.rfc}
+            label="RFC"
+            maxLength={13}
+            value={value.rfc}
+            onChange={(event) => patch("rfc", event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.curp}
+            label="CURP"
+            maxLength={18}
+            value={value.curp}
+            onChange={(event) => patch("curp", event.target.value.replace(/[^a-zA-Z0-9]/g, "").toUpperCase())}
+          />
+          <Select
+            className="h-12 text-base sm:col-span-2"
+            error={errors.estadoNacimientoId}
+            label="Estado de nacimiento"
+            options={stateSelectOptions}
+            value={value.estadoNacimientoId ? String(value.estadoNacimientoId) : ""}
+            onChange={(event) => patch("estadoNacimientoId", event.target.value ? Number(event.target.value) : null)}
+          />
+        </div>
+      </GeneralDataSection>
+
+      <GeneralDataSection title="Dirección">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            className="h-12 text-base"
+            error={errors.codigoPostal}
+            helperText={zipLoading ? "Buscando código postal..." : zipMessage}
+            inputMode="numeric"
+            label="Código postal"
+            maxLength={5}
+            value={value.codigoPostal}
+            onChange={(event) => patch("codigoPostal", onlyDigits(event.target.value).slice(0, 5))}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.direccion}
+            label="Calle"
+            value={value.direccion}
+            onChange={(event) => patch("direccion", event.target.value)}
+            onBlur={() => patch("direccion", toTitleCase(value.direccion))}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.numExt}
+            label="Número exterior"
+            value={value.numExt}
+            onChange={(event) => patch("numExt", event.target.value)}
+          />
+          <Input
+            className="h-12 text-base"
+            label="Número interior"
+            value={value.numInt}
+            onChange={(event) => patch("numInt", event.target.value)}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.estadoId}
+            label="Estado"
+            value={value.estadoNombre}
+            onChange={(event) => onChange({ ...value, estadoNombre: event.target.value, estadoId: value.estadoId || event.target.value })}
+          />
+          <Input
+            className="h-12 text-base"
+            error={errors.municipioId}
+            label="Municipio"
+            value={value.municipioNombre}
+            onChange={(event) => onChange({ ...value, municipioNombre: event.target.value, municipioId: value.municipioId || event.target.value })}
+          />
+          {colonyOptions.length > 0 ? (
+            <Select
+              className="h-12 text-base sm:col-span-2"
+              error={errors.coloniaId}
+              label="Colonia"
+              options={colonySelectOptions}
+              value={value.coloniaId}
+              onChange={(event) => {
+                const colony = colonyOptions.find((item) => item.id === event.target.value);
+                onChange({ ...value, coloniaId: event.target.value, coloniaNombre: colony?.name ?? "" });
+              }}
+            />
+          ) : (
+            <Input
+              className="h-12 text-base sm:col-span-2"
+              error={errors.coloniaId}
+              label="Colonia"
+              value={value.coloniaNombre}
+              onChange={(event) => onChange({ ...value, coloniaNombre: event.target.value, coloniaId: event.target.value })}
+              onBlur={() => onChange({ ...value, coloniaNombre: toTitleCase(value.coloniaNombre), coloniaId: value.coloniaId || toTitleCase(value.coloniaNombre) })}
+            />
+          )}
+        </div>
+      </GeneralDataSection>
     </div>
   );
 }
@@ -341,6 +471,11 @@ export function SolicitudFlowPage() {
   const [otpSuccessMessage, setOtpSuccessMessage] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
   const [processingIndex, setProcessingIndex] = useState(0);
+  const [stateOptions, setStateOptions] = useState<StateOption[]>(FALLBACK_STATES);
+  const [colonyOptions, setColonyOptions] = useState<ColonyOption[]>([]);
+  const [zipMessage, setZipMessage] = useState("");
+  const [zipLoading, setZipLoading] = useState(false);
+  const [lastZipLookup, setLastZipLookup] = useState("");
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -378,6 +513,63 @@ export function SolicitudFlowPage() {
       .catch(() => setError("No pudimos cargar la lista de documentos. Mostraremos una lista base para continuar."))
       .finally(() => setSaving(false));
   }, [flow?.flowId, flow?.currentStep, flow?.backendDocumentsLoaded]);
+
+  useEffect(() => {
+    if (!flow || flow.currentStep !== "datos_basicos") return;
+    let ignore = false;
+    void getStateCatalog()
+      .then((result) => {
+        if (ignore) return;
+        const mapped = mapStatesCatalog(result);
+        setStateOptions(mapped.length > 0 ? mapped : FALLBACK_STATES);
+      })
+      .catch(() => {
+        if (!ignore) setStateOptions(FALLBACK_STATES);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [flow?.currentStep]);
+
+  useEffect(() => {
+    const zipCode = flow?.generalData?.codigoPostal ?? "";
+    if (!flow || flow.currentStep !== "datos_basicos" || zipCode.length !== 5 || zipCode === lastZipLookup) return;
+
+    setLastZipLookup(zipCode);
+    setZipLoading(true);
+    setZipMessage("");
+    void getAddressCatalogByZipCode(zipCode)
+      .then((result) => {
+        const mapped = mapAddressCatalog(result);
+        if (!mapped.estadoNombre && !mapped.municipioNombre) {
+          setColonyOptions([]);
+          setZipMessage("No pudimos encontrar tu código postal. Puedes revisar el dato o intentarlo nuevamente.");
+          return;
+        }
+        setColonyOptions(mapped.colonias);
+        setFlow((current) => {
+          if (!current || current.flowId !== flow.flowId || current.generalData.codigoPostal !== zipCode) return current;
+          const firstColony = mapped.colonias[0];
+          return {
+            ...current,
+            generalData: {
+              ...current.generalData,
+              estadoId: mapped.estadoId || current.generalData.estadoId,
+              estadoNombre: mapped.estadoNombre || current.generalData.estadoNombre,
+              municipioId: mapped.municipioId || current.generalData.municipioId,
+              municipioNombre: mapped.municipioNombre || current.generalData.municipioNombre,
+              coloniaId: current.generalData.coloniaId || firstColony?.id || "",
+              coloniaNombre: current.generalData.coloniaNombre || firstColony?.name || "",
+            },
+          };
+        });
+      })
+      .catch(() => {
+        setColonyOptions([]);
+        setZipMessage("No pudimos encontrar tu código postal. Puedes revisar el dato o intentarlo nuevamente.");
+      })
+      .finally(() => setZipLoading(false));
+  }, [flow?.flowId, flow?.currentStep, flow?.generalData?.codigoPostal, lastZipLookup]);
 
   const stepNumber = useMemo(() => {
     if (!flow) return 1;
@@ -636,6 +828,8 @@ export function SolicitudFlowPage() {
   }
 
   if (flow.currentStep === "datos_basicos") {
+    const hasOcrPrefill = Boolean(flow.ocrPrefillFields?.length);
+    const generalData = flow.generalData;
     return (
       <QuestionScreen
         step={stepNumber}
@@ -658,17 +852,25 @@ export function SolicitudFlowPage() {
               loading={saving}
               size="lg"
               type="button"
-              onClick={() => runAction(() => saveBasicData(flow.flowId, flow.basicData))}
+              onClick={() => runAction(() => saveBasicData(flow.flowId, normalizeGeneralDataInput(generalData)))}
             >
               Continuar
             </Button>
           </>
         }
       >
-        <BasicDataFields
-          applicantKind={flow.applicantKind}
-          value={flow.basicData}
-          onChange={(basicData) => setFlow({ ...flow, basicData })}
+        {hasOcrPrefill && (
+          <p className="mb-4 rounded-[8px] bg-[#F5FAFF] px-4 py-3 text-sm leading-6 text-slate-600">
+            Prellenamos algunos datos desde tu identificación. Puedes revisarlos y corregirlos si es necesario.
+          </p>
+        )}
+        <GeneralDataFields
+          colonyOptions={colonyOptions}
+          stateOptions={stateOptions}
+          value={generalData}
+          zipLoading={zipLoading}
+          zipMessage={zipMessage}
+          onChange={(nextGeneralData) => setFlow({ ...flow, generalData: nextGeneralData })}
         />
       </QuestionScreen>
     );

@@ -64,7 +64,7 @@ describe("onboarding api configuration", () => {
         },
         fallback: async () => "mock",
       }),
-    ).rejects.toThrow("No pudimos guardar este paso. Intenta nuevamente.");
+    ).rejects.toThrow("No pudimos guardar tus datos. Intenta nuevamente.");
   });
 });
 

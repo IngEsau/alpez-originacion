@@ -23,14 +23,31 @@ export interface StartOnboardingResult {
 
 export interface SaveGeneralDataPayload {
   trace_id: string;
+
   primer_nombre: string;
   segundo_nombre?: string;
   apellido_paterno: string;
   apellido_materno?: string;
-  fecha_nacimiento?: string;
-  genero?: "M" | "F" | "O";
+
+  fecha_nacimiento: string;
+  genero: "M" | "F" | "O";
+
   telefono: string;
   correo: string;
+
+  rfc: string;
+  curp: string;
+
+  estado_nacimiento_id: number;
+
+  direccion: string;
+  num_ext: string;
+  num_int?: string;
+
+  colonia_id: string;
+  estado_id: string;
+  municipio_id: string;
+  codigo_postal: string;
 }
 
 export interface SaveBusinessDataPayload {

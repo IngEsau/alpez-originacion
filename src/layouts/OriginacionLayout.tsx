@@ -34,9 +34,8 @@ export function OriginacionLayout() {
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 lg:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <AlpezLogo className="h-10 w-10 rounded-xl" />
+              <AlpezLogo className="h-12" variant="horizontal" />
               <div>
-                <p className="font-bold text-slate-950">ALPEZ</p>
                 <p className="text-xs text-slate-500">Originación asistida</p>
               </div>
             </div>

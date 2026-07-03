@@ -18,6 +18,7 @@ import type {
   BasicData,
   BusinessData,
   DemoCreditScenario,
+  OnboardingGeneralData,
   PhoneVerificationState,
   SolicitudDocument,
   SolicitudFlowState,
@@ -41,6 +42,14 @@ import {
   scoreRangeLabel,
 } from "../utils/creditEvaluation";
 import { resolveDemoCreditScenario } from "../utils/demoCreditScenario";
+import {
+  basicDataFromGeneralData,
+  EMPTY_ONBOARDING_GENERAL_DATA,
+  generalDataFromBasicData,
+  mapGeneralDataToBackendPayload,
+  normalizeGeneralDataInput,
+} from "../utils/generalData";
+import { applyIneOcrToGeneralData } from "../utils/ineOcr";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
 const DEMO_OTP_CODE = "123456";
@@ -51,33 +60,6 @@ function backendTraceIdOrThrow(flow: SolicitudFlowState): string {
     throw new Error("No pudimos guardar este paso. Intenta nuevamente.");
   }
   return traceId;
-}
-
-function splitFullName(fullName: string): {
-  primer_nombre: string;
-  segundo_nombre?: string;
-  apellido_paterno: string;
-  apellido_materno?: string;
-} {
-  const parts = fullName.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
-    return { primer_nombre: "Prospecto", apellido_paterno: "ALPEZ" };
-  }
-  if (parts.length === 1) {
-    return { primer_nombre: parts[0], apellido_paterno: "ALPEZ" };
-  }
-  if (parts.length === 2) {
-    return { primer_nombre: parts[0], apellido_paterno: parts[1] };
-  }
-  if (parts.length === 3) {
-    return { primer_nombre: parts[0], apellido_paterno: parts[1], apellido_materno: parts[2] };
-  }
-  return {
-    primer_nombre: parts[0],
-    segundo_nombre: parts.slice(1, -2).join(" "),
-    apellido_paterno: parts[parts.length - 2],
-    apellido_materno: parts[parts.length - 1],
-  };
 }
 
 function createValidationEvents(flow: SolicitudFlowState, evaluatedAt: string): ValidationEvent[] {
@@ -413,10 +395,19 @@ function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
 }
 
 function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
+  const generalData = flow.generalData
+    ? normalizeGeneralDataInput(flow.generalData)
+    : generalDataFromBasicData(flow.basicData);
+  const basicData = {
+    ...flow.basicData,
+    ...basicDataFromGeneralData(generalData, flow.basicData.companyName),
+  };
   if (flow.backendDocumentsLoaded) {
     return {
       ...flow,
-      phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
+      generalData,
+      basicData,
+      phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),
     };
   }
 
@@ -425,7 +416,9 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
 
   return {
     ...flow,
-    phoneVerification: phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification),
+    generalData,
+    basicData,
+    phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),
     documents: normalizedDocuments.map((document) => ({
       ...document,
       ...existingById.get(document.id),
@@ -471,6 +464,7 @@ export async function createSolicitudFlow(demoCreditScenario?: DemoCreditScenari
     currentStep: "tipo_solicitante",
     ineReviewed: false,
     basicData: EMPTY_BASIC_DATA,
+    generalData: EMPTY_ONBOARDING_GENERAL_DATA,
     businessData: EMPTY_BUSINESS_DATA,
     documents: documentsForKind(),
     phoneVerification: phoneVerificationForPhone(""),
@@ -553,10 +547,21 @@ export async function confirmIneReview(flowId: string, accepted: boolean): Promi
         ineBack: flow.ineBack,
       })
     : null;
+  const ocrPrefill = applyIneOcrToGeneralData(
+    flow.generalData,
+    onboardingResult?.ocr,
+  );
+  const nextGeneralData = accepted ? ocrPrefill.generalData : flow.generalData;
   const nextFlow = saveFlow({
     ...flow,
     ineReviewed: accepted,
     backendTraceId: onboardingResult?.trace_id ?? flow.backendTraceId,
+    ineOcr: onboardingResult?.ocr ?? flow.ineOcr,
+    generalData: nextGeneralData,
+    basicData: accepted ? basicDataFromGeneralData(nextGeneralData, flow.basicData.companyName) : flow.basicData,
+    ocrPrefillFields: accepted && ocrPrefill.prefilledFields.length > 0
+      ? Array.from(new Set([...(flow.ocrPrefillFields ?? []), ...ocrPrefill.prefilledFields]))
+      : flow.ocrPrefillFields,
     currentStep: accepted ? "datos_basicos" : "revision_ine",
   });
   await addPublicEvent(nextFlow, "ine_revision_visual_confirmada", "Revisión visual de INE confirmada", "revision_ine", {
@@ -565,24 +570,16 @@ export async function confirmIneReview(flowId: string, accepted: boolean): Promi
   return nextFlow;
 }
 
-export async function saveBasicData(flowId: string, basicData: BasicData): Promise<SolicitudFlowState> {
+export async function saveBasicData(flowId: string, generalData: OnboardingGeneralData): Promise<SolicitudFlowState> {
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  const splitName = splitFullName(
-    flow.applicantKind === "company" ? basicData.representativeName : basicData.fullName,
-  );
-  await saveOnboardingGeneralData({
-    trace_id: backendTraceIdOrThrow(flow),
-    primer_nombre: splitName.primer_nombre,
-    segundo_nombre: splitName.segundo_nombre,
-    apellido_paterno: splitName.apellido_paterno,
-    apellido_materno: splitName.apellido_materno,
-    telefono: digitsOnly(basicData.phone),
-    correo: basicData.email,
-  });
+  const normalizedGeneralData = normalizeGeneralDataInput(generalData);
+  await saveOnboardingGeneralData(mapGeneralDataToBackendPayload(normalizedGeneralData, backendTraceIdOrThrow(flow)));
+  const basicData = basicDataFromGeneralData(normalizedGeneralData, flow.basicData.companyName);
   const nextFlow = saveFlow({
     ...flow,
+    generalData: normalizedGeneralData,
     basicData,
     currentStep: "datos_negocio",
     phoneVerification: phoneVerificationForPhone(basicData.phone, flow.phoneVerification),

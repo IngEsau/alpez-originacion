@@ -69,6 +69,32 @@ export interface BasicData {
   representativeName: string;
 }
 
+export type GeneralDataGender = "M" | "F" | "O" | "";
+
+export interface OnboardingGeneralData {
+  primerNombre: string;
+  segundoNombre: string;
+  apellidoPaterno: string;
+  apellidoMaterno: string;
+  fechaNacimiento: string;
+  genero: GeneralDataGender;
+  telefono: string;
+  correo: string;
+  rfc: string;
+  curp: string;
+  estadoNacimientoId: number | null;
+  direccion: string;
+  numExt: string;
+  numInt: string;
+  codigoPostal: string;
+  estadoId: string;
+  estadoNombre: string;
+  municipioId: string;
+  municipioNombre: string;
+  coloniaId: string;
+  coloniaNombre: string;
+}
+
 export interface BusinessData {
   activity: string;
   seniorityYears: string;
@@ -90,6 +116,8 @@ export interface SolicitudFlowState {
   flowId: string;
   trace_id: string;
   backendTraceId?: string;
+  ineOcr?: unknown;
+  ocrPrefillFields?: Array<keyof OnboardingGeneralData>;
   folio?: string;
   application_id?: string;
   currentStep: SolicitudStep;
@@ -98,6 +126,7 @@ export interface SolicitudFlowState {
   ineBack?: StoredFile;
   ineReviewed: boolean;
   basicData: BasicData;
+  generalData: OnboardingGeneralData;
   businessData: BusinessData;
   requestedAmount?: number;
   documents: SolicitudDocument[];

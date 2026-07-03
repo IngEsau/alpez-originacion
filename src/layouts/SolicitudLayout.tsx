@@ -15,8 +15,7 @@ export function SolicitudLayout() {
             type="button"
             onClick={() => navigate("/")}
           >
-            <AlpezLogo />
-            <span className="text-lg font-bold">ALPEZ</span>
+            <AlpezLogo className="h-12" variant="horizontal" />
           </button>
 
           <div className="flex items-center gap-2">

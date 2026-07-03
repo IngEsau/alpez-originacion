@@ -36,9 +36,8 @@ export function DashboardLayout() {
         <div className="flex h-full flex-col">
           <div className="border-b border-slate-200 p-5">
             <div className="flex items-center gap-3">
-              <AlpezLogo className="rounded-xl" />
+              <AlpezLogo className="h-12" variant="horizontal" />
               <div>
-                <p className="font-bold text-slate-950">ALPEZ</p>
                 <p className="text-xs text-slate-500">Dashboard</p>
               </div>
             </div>
