@@ -1,8 +1,7 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthLayout } from "../layouts/AuthLayout";
 import { DashboardLayout } from "../layouts/DashboardLayout";
 import { OriginacionLayout } from "../layouts/OriginacionLayout";
-import { PublicPortalLayout } from "../layouts/PublicPortalLayout";
 import { SolicitudLayout } from "../layouts/SolicitudLayout";
 import { ApplicationsPage } from "../pages/ApplicationsPage";
 import { ApplicationDetailPage } from "../pages/ApplicationDetailPage";
@@ -12,7 +11,6 @@ import { LoginPage } from "../pages/LoginPage";
 import { NewApplicationPage } from "../pages/NewApplicationPage";
 import { NotFoundPage } from "../pages/NotFoundPage";
 import { OriginacionFlowPage } from "../pages/OriginacionFlowPage";
-import { PortalPage } from "../pages/PortalPage";
 import { SolicitudFlowPage } from "../pages/SolicitudFlowPage";
 import { SolicitudSuccessPage } from "../pages/SolicitudSuccessPage";
 import { TraceDetailPage } from "../pages/TraceDetailPage";
@@ -27,14 +25,17 @@ function PublicRoute() {
   return hasDemoSession() ? <Navigate replace to="/dashboard" /> : <AuthLayout />;
 }
 
+function RedirectSolicitudLanding() {
+  const location = useLocation();
+  return <Navigate replace to={`/${location.search}`} />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
-      <Route element={<PublicPortalLayout />}>
-        <Route path="/" element={<PortalPage />} />
-      </Route>
       <Route element={<SolicitudLayout />}>
-        <Route path="/solicitud" element={<SolicitudFlowPage />} />
+        <Route path="/" element={<SolicitudFlowPage />} />
+        <Route path="/solicitud" element={<RedirectSolicitudLanding />} />
         <Route path="/solicitud/:flowId" element={<SolicitudFlowPage />} />
         <Route path="/solicitud/:flowId/final" element={<SolicitudSuccessPage />} />
       </Route>

@@ -3,14 +3,20 @@ import {
   ArrowRight,
   Building2,
   Check,
+  CircleHelp,
+  Clock3,
   Eye,
   FileText,
   FileUp,
+  Lock,
+  LogIn,
   Loader2,
   MessageSquare,
   RefreshCw,
+  ShieldCheck,
   Trash2,
   User,
+  UserRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
@@ -71,6 +77,7 @@ import {
 import { Button } from "../shared/components/Button";
 import { Input } from "../shared/components/Input";
 import { Select } from "../shared/components/Select";
+import { AlpezLogo } from "../shared/components/AlpezLogo";
 import { fileToBase64 } from "../shared/lib/fileToBase64";
 import { cx } from "../shared/lib/formatters";
 
@@ -489,6 +496,37 @@ function BusinessDataFields({
   );
 }
 
+function LandingDecor() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+      <img
+        alt=""
+        className="h-full w-full object-cover"
+        draggable={false}
+        src="/bg_image.png"
+      />
+    </div>
+  );
+}
+
+const landingBenefits = [
+  {
+    title: "Seguro y confiable",
+    description: "Tu información está protegida con los más altos estándares.",
+    icon: ShieldCheck,
+  },
+  {
+    title: "Proceso ágil",
+    description: "Menos formularios y una experiencia más rápida.",
+    icon: Clock3,
+  },
+  {
+    title: "Acompañamiento experto",
+    description: "Te guiamos en cada paso hasta la resolución.",
+    icon: UserRound,
+  },
+];
+
 export function SolicitudFlowPage() {
   const { flowId } = useParams();
   const navigate = useNavigate();
@@ -509,6 +547,7 @@ export function SolicitudFlowPage() {
   const [zipMessage, setZipMessage] = useState("");
   const [zipLoading, setZipLoading] = useState(false);
   const [lastZipLookup, setLastZipLookup] = useState("");
+  const [showLandingHelp, setShowLandingHelp] = useState(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -664,35 +703,139 @@ export function SolicitudFlowPage() {
   }
 
   if (!flowId) {
+    const startSolicitud = () =>
+      runAction(async () => {
+        const created = await createSolicitudFlow(demoScenario ?? undefined);
+        navigate(`/solicitud/${created.flowId}`);
+        return created;
+      });
+
     return (
-      <QuestionScreen
-        step={1}
-        totalSteps={TOTAL_STEPS}
-        title="Vamos a iniciar tu solicitud"
-        description="Te haremos algunas preguntas y te pediremos tu identificación para avanzar con la revisión."
-        actions={
-          <Button
-            className="min-h-12 w-full sm:w-auto"
-            icon={<ArrowRight className="h-4 w-4" />}
-            loading={saving}
-            size="lg"
-            type="button"
-            onClick={() =>
-              runAction(async () => {
-                const created = await createSolicitudFlow(demoScenario ?? undefined);
-                navigate(`/solicitud/${created.flowId}`);
-                return created;
-              })
-            }
-          >
-            Comenzar
-          </Button>
-        }
-      >
-        <div className="rounded-[8px] bg-[#F5FAFF] p-5 text-base leading-7 text-slate-700">
-          Tus datos se usan únicamente para revisar tu solicitud.
-        </div>
-      </QuestionScreen>
+      <section className="relative min-h-screen w-full overflow-x-hidden bg-[#F5FAFF] text-slate-950">
+        <LandingDecor />
+        <header className="relative z-10 w-full border-b border-white/80 bg-white/70 backdrop-blur">
+          <div className="mx-auto flex min-h-[88px] w-full max-w-[1240px] flex-col gap-4 px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-10 lg:px-14">
+            <button
+              className="w-fit rounded-[12px] outline-none transition focus:ring-2 focus:ring-[#B8D4F0]"
+              type="button"
+              onClick={() => navigate("/")}
+            >
+              <AlpezLogo className="h-12 sm:h-14" variant="horizontal" />
+            </button>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                className="inline-flex h-11 items-center gap-2 rounded-[12px] px-3 text-sm font-semibold text-[#062B52] transition hover:bg-[#F3F8FD] focus:outline-none focus:ring-2 focus:ring-[#B8D4F0]"
+                type="button"
+                onClick={() => setShowLandingHelp(true)}
+              >
+                <CircleHelp className="h-5 w-5" />
+                Ayuda
+              </button>
+              <Button
+                className="h-12 rounded-[12px] border-[#0F4C81] px-4 text-[#062B52] hover:bg-[#F3F8FD] sm:px-6"
+                icon={<LogIn className="h-4 w-4" />}
+                type="button"
+                variant="outline"
+                onClick={() => navigate("/login")}
+              >
+                Soy un agente / Entrar al panel
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="relative z-10 flex min-h-[calc(100vh-88px)] items-center">
+          <div className="mx-auto grid w-full max-w-[1240px] gap-11 px-6 py-8 sm:px-10 sm:py-10 lg:px-14 lg:py-12">
+            <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,660px)_minmax(340px,1fr)] xl:grid-cols-[minmax(0,690px)_minmax(380px,1fr)]">
+              <div className="max-w-[690px] text-left">
+                <h1 className="max-w-[720px] text-[clamp(2.75rem,8vw,3.75rem)] font-extrabold leading-[1.02] tracking-normal text-[#0F172A] sm:text-[clamp(3.1rem,4.7vw,5.1rem)] sm:leading-[0.99]">
+                  Solicita tu línea de crédito{" "}
+                  <br />
+                  <span className="text-[#0F4C81]">en minutos</span>
+                </h1>
+                <p className="mt-6 max-w-[520px] text-lg leading-8 text-[#475569]">
+                  Completa tu información paso a paso y te guiaremos durante todo el proceso.
+                </p>
+
+                <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <Button
+                    className="h-12 rounded-[12px] bg-[#003C69] px-7 text-base shadow-[0_14px_30px_rgba(0,60,105,0.24)] hover:bg-[#062B52] focus:ring-2 focus:ring-[#B8D4F0] sm:min-w-56"
+                    icon={<FileText className="h-5 w-5" />}
+                    loading={saving}
+                    size="lg"
+                    type="button"
+                    onClick={() => void startSolicitud()}
+                  >
+                    Iniciar solicitud
+                  </Button>
+                  <Button
+                    className="h-12 rounded-[12px] border-[#0F4C81] px-6 text-base text-[#062B52] hover:bg-[#F3F8FD] focus:ring-2 focus:ring-[#B8D4F0] sm:min-w-56"
+                    icon={<Clock3 className="h-5 w-5" />}
+                    size="lg"
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowLandingHelp(true)}
+                  >
+                    Ya tengo una solicitud
+                  </Button>
+                </div>
+
+                <p className="mt-5 flex items-center gap-2 text-sm font-medium text-[#64748B]">
+                  <Lock className="h-4 w-4 text-[#0F4C81]" />
+                  Tus datos se usan únicamente para revisar tu solicitud.
+                </p>
+              </div>
+
+              <div className="hidden min-h-[390px] lg:block" />
+            </div>
+
+            <div className="grid w-full max-w-[1080px] gap-5 lg:grid-cols-3">
+              {landingBenefits.map((benefit) => {
+                const Icon = benefit.icon;
+                return (
+                  <article
+                    className="flex min-h-28 items-center gap-5 rounded-[18px] border border-[#E2E8F0] bg-white/88 p-5 shadow-[0_18px_42px_rgba(15,76,129,0.1)] backdrop-blur"
+                    key={benefit.title}
+                  >
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#EAF2FB] text-[#0F4C81] ring-1 ring-[#D8E8F7]">
+                      <Icon className="h-7 w-7" />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-bold text-[#062B52]">{benefit.title}</h2>
+                      <p className="mt-1 text-sm leading-6 text-[#475569]">{benefit.description}</p>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </main>
+
+        {showLandingHelp && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+            <div className="w-full max-w-md rounded-[18px] border border-slate-200 bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-950">Canal de ayuda</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">Un asesor puede orientarte sobre tu solicitud.</p>
+                </div>
+                <button
+                  className="rounded-[10px] px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-[#B8D4F0]"
+                  type="button"
+                  onClick={() => setShowLandingHelp(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+              <div className="mt-5 space-y-2 text-sm leading-6 text-slate-600">
+                <p>Teléfono: 222 555 0100</p>
+                <p>Correo: apoyo@alpez.mx</p>
+                <p>Ten a la mano tu folio para recibir atención más rápido.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
     );
   }
 

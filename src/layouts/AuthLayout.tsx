@@ -7,7 +7,6 @@ export function AuthLayout() {
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
           <AlpezLogo className="mx-auto mb-3 h-24" variant="horizontal" />
-          <p className="mt-2 text-sm text-slate-500">Originación financiera en ambiente demo</p>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <Outlet />
