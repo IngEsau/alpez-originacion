@@ -58,6 +58,7 @@ export interface SolicitudDocument {
   optional?: boolean;
   backendDocumentId?: string | number;
   backendKey?: string;
+  backendCondition?: string;
 }
 
 export interface BasicData {
@@ -116,6 +117,7 @@ export interface PhoneVerificationState {
   codeSent: boolean;
   codeVerified: boolean;
   sentAt?: string;
+  expiresAt?: string;
   verifiedAt?: string;
   attempts: number;
 }
@@ -143,6 +145,7 @@ export interface SolicitudFlowState {
   documentProgress?: {
     totalRequired?: number;
     totalUploaded?: number;
+    completed?: boolean;
   };
   hasGuarantor?: boolean;
   hasCollateral?: boolean;

@@ -150,6 +150,11 @@ function visibleSolicitudDocuments(flow: SolicitudFlowState): SolicitudDocument[
 }
 
 function documentCounts(flow: SolicitudFlowState): { added: number; pending: number } {
+  if (flow.documentProgress?.totalRequired !== undefined || flow.documentProgress?.totalUploaded !== undefined) {
+    const added = flow.documentProgress.totalUploaded ?? 0;
+    const total = flow.documentProgress.totalRequired ?? visibleSolicitudDocuments(flow).length;
+    return { added, pending: Math.max(total - added, 0) };
+  }
   const documents = visibleSolicitudDocuments(flow);
   const added = documents.filter((document) => {
     if (document.applicationType === "ine_titular" || document.applicationType === "ine_representante_legal") {
@@ -1403,6 +1408,7 @@ export function SolicitudFlowPage() {
         setFlow(nextFlow);
         setOtpCode("");
         setResendCooldown(30);
+        setOtpSuccessMessage("Te enviamos un código por SMS.");
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : "No pudimos enviar el código.");
       } finally {

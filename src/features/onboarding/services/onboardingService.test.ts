@@ -3,8 +3,10 @@ import {
   isApiFallbackEnabled,
   isRealApiEnabled,
   mapBackendDocumentsToSolicitudDocuments,
+  mapRequiredDocumentsResult,
   resolveApiOrMock,
 } from "./onboardingService";
+import { ApiRequestError } from "../../../services/http/httpClient";
 
 describe("onboarding api configuration", () => {
   it("enables real api and fallback only with explicit true string", () => {
@@ -66,6 +68,27 @@ describe("onboarding api configuration", () => {
       }),
     ).rejects.toThrow("No pudimos guardar tus datos. Intenta nuevamente.");
   });
+
+  it("does not fallback to mock for business validation errors", async () => {
+    const fallback = vi.fn(async () => "mock");
+
+    await expect(
+      resolveApiOrMock({
+        useRealApi: true,
+        fallbackToMock: true,
+        operation: "validateSms",
+        apiCall: async () => {
+          throw new ApiRequestError(422, "El código de verificación no es correcto", {
+            success: false,
+            data: { valid: false },
+          });
+        },
+        fallback,
+      }),
+    ).rejects.toThrow("No pudimos confirmar el código. Intenta nuevamente.");
+
+    expect(fallback).not.toHaveBeenCalled();
+  });
 });
 
 describe("mapBackendDocumentsToSolicitudDocuments", () => {
@@ -74,17 +97,19 @@ describe("mapBackendDocumentsToSolicitudDocuments", () => {
       solicitante: [
         {
           id: 10,
-          clave: "curp",
+          clave: "CURP",
           nombre: "CURP",
-          requerido: true,
+          requerido: "1",
+          cargado: true,
         },
       ],
       aval: [
         {
           id: "aval-ine",
-          clave: "ine_aval",
+          clave: "INE_AVAL_FRONTAL",
           nombre: "INE del aval",
-          requerido: false,
+          requerido: "0",
+          condicionado_a: "AVAL",
         },
       ],
     });
@@ -93,20 +118,40 @@ describe("mapBackendDocumentsToSolicitudDocuments", () => {
       expect.objectContaining({
         id: "solicitante_10",
         backendDocumentId: 10,
-        backendKey: "curp",
+        backendKey: "CURP",
         label: "CURP",
         applicationType: "curp",
-        status: "missing",
+        status: "uploaded",
         optional: false,
       }),
       expect.objectContaining({
         id: "aval_aval-ine",
         backendDocumentId: "aval-ine",
-        backendKey: "ine_aval",
+        backendKey: "INE_AVAL_FRONTAL",
+        backendCondition: "AVAL",
         label: "INE del aval",
         applicationType: "ine_aval",
         optional: true,
       }),
     ]);
+  });
+
+  it("maps backend document progress", () => {
+    const result = mapRequiredDocumentsResult({
+      solicitante: [],
+      aval: [],
+      garantia: [],
+      progreso: {
+        total_requeridos: 8,
+        total_cargados: 3,
+        completado: false,
+      },
+    });
+
+    expect(result.progress).toEqual({
+      totalRequired: 8,
+      totalUploaded: 3,
+      completed: false,
+    });
   });
 });

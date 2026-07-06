@@ -85,13 +85,14 @@ describe("fiscal identity", () => {
     expect(
       extractFiscalIdentityFromGeneralDataResponse({
         data: {
+          etapa_actual: "DATOS_CURP_RFC",
           identificacion_fiscal: {
             rfc: "gage950615gt1",
             curp: "gage950615hplnyr01",
           },
         },
       }),
-    ).toEqual({ rfc: "GAGE950615GT1", curp: "GAGE950615HPLNYR01" });
+    ).toEqual({ rfc: "GAGE950615GT1", curp: "GAGE950615HPLNYR01", etapaActual: "DATOS_CURP_RFC" });
   });
 
   it("uses backend identity before OCR", () => {

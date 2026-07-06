@@ -229,7 +229,9 @@ function readNestedRecord(source: unknown, path: string[]): unknown {
   }, source);
 }
 
-export function extractFiscalIdentityFromGeneralDataResponse(response: unknown): Partial<Pick<FiscalIdentity, "rfc" | "curp">> {
+export function extractFiscalIdentityFromGeneralDataResponse(
+  response: unknown,
+): Partial<Pick<FiscalIdentity, "rfc" | "curp">> & { etapaActual?: string } {
   const data = response && typeof response === "object" && "data" in response
     ? (response as { data?: unknown }).data
     : response;
@@ -242,10 +244,14 @@ export function extractFiscalIdentityFromGeneralDataResponse(response: unknown):
     cleanOptionalIdentityCode(readNestedRecord(data, ["curp"])) ??
     cleanOptionalIdentityCode(readNestedRecord(data, ["fiscal", "curp"])) ??
     cleanOptionalIdentityCode(readNestedRecord(data, ["identificacion_fiscal", "curp"]));
+  const etapaActual =
+    readNestedRecord(data, ["etapa_actual"]) ??
+    readNestedRecord(data, ["etapaActual"]);
 
   return {
     ...(rfc ? { rfc } : {}),
     ...(curp ? { curp } : {}),
+    ...(typeof etapaActual === "string" ? { etapaActual } : {}),
   };
 }
 

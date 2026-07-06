@@ -2,11 +2,13 @@ const DEFAULT_API_BASE_URL = "";
 
 export class ApiRequestError extends Error {
   status: number;
+  body: unknown;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body?: unknown) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -14,7 +16,7 @@ function apiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).trim();
 }
 
-function buildUrl(path: string): string {
+export function buildApiUrl(path: string): string {
   const baseUrl = apiBaseUrl();
   if (!baseUrl) {
     throw new ApiRequestError(0, "API base URL is not configured.");
@@ -53,14 +55,14 @@ export async function apiRequest<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(buildUrl(path), {
+  const response = await fetch(buildApiUrl(path), {
     ...options,
     headers,
   });
   const body = await parseResponseBody(response);
 
   if (!response.ok) {
-    throw new ApiRequestError(response.status, messageFromBody(body));
+    throw new ApiRequestError(response.status, messageFromBody(body), body);
   }
 
   return body as T;

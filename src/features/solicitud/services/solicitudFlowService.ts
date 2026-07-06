@@ -32,9 +32,12 @@ import {
   saveOnboardingBusinessData,
   saveOnboardingCreditData,
   saveOnboardingGeneralData,
+  sendOnboardingSms,
   startOnboardingFlow,
   uploadDocument,
   USE_REAL_API,
+  validateFiscalIdentityWithBackend,
+  validateOnboardingSms,
 } from "../../onboarding/services/onboardingService";
 import {
   areRequiredDocumentsComplete,
@@ -57,8 +60,6 @@ import {
 import { applyIneOcrToGeneralData, extractFiscalIdentityFromOcr, fiscalIdentityFromOcr } from "../utils/ineOcr";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
-const DEMO_OTP_CODE = "123456";
-
 function backendTraceIdOrThrow(flow: SolicitudFlowState): string {
   const traceId = flow.backendTraceId || flow.trace_id;
   if (!traceId && USE_REAL_API) {
@@ -440,7 +441,11 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
 
 function markIneDocumentFromStart(document: SolicitudDocument, flow: SolicitudFlowState): SolicitudDocument {
   const searchable = `${document.id} ${document.label} ${document.backendKey ?? ""}`.toLowerCase();
-  if (!searchable.includes("ine")) return document;
+  const isStartupIne =
+    document.applicationType === "ine_titular" ||
+    document.applicationType === "ine_representante_legal" ||
+    (searchable.includes("ine") && !searchable.includes("aval"));
+  if (!isStartupIne) return document;
   if (!flow.ineFront || !flow.ineBack) return document;
   return {
     ...document,
@@ -499,7 +504,13 @@ export async function updateSolicitudStep(flowId: string, currentStep: Solicitud
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  return saveFlow({ ...flow, currentStep });
+  const nextFlow = saveFlow({ ...flow, currentStep });
+  if (flow.currentStep === "documentos" && currentStep === "phone_verification") {
+    await addPublicEvent(nextFlow, "documental_stage_completed", "Documentos revisados para continuar", "documentos", {
+      documentProgress: nextFlow.documentProgress,
+    });
+  }
+  return nextFlow;
 }
 
 export async function selectApplicantKind(flowId: string, applicantKind: ApplicantKind): Promise<SolicitudFlowState> {
@@ -619,9 +630,23 @@ export async function saveFiscalIdentity(flowId: string, fiscalIdentity: FiscalI
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  const normalizedFiscalIdentity = normalizeFiscalIdentity({
+  const identityToValidate = normalizeFiscalIdentity({
     ...fiscalIdentity,
     source: fiscalIdentity.source === "empty" ? "manual" : fiscalIdentity.source,
+    confirmed: false,
+  });
+  const validationResult = await validateFiscalIdentityWithBackend({
+    trace_id: backendTraceIdOrThrow(flow),
+    rfc: identityToValidate.rfc,
+    curp: identityToValidate.curp,
+  });
+  if (validationResult.validado === false) {
+    throw new Error("No pudimos validar estos datos. Revisa la información e intenta nuevamente.");
+  }
+  const normalizedFiscalIdentity = normalizeFiscalIdentity({
+    ...identityToValidate,
+    rfc: validationResult.rfc ?? identityToValidate.rfc,
+    curp: validationResult.curp ?? identityToValidate.curp,
     confirmed: true,
   });
   const basicData = basicDataFromGeneralData(flow.generalData, flow.basicData.companyName, normalizedFiscalIdentity);
@@ -632,6 +657,9 @@ export async function saveFiscalIdentity(flowId: string, fiscalIdentity: FiscalI
     currentStep: "datos_negocio",
   });
   await addPublicEvent(nextFlow, "fiscal_identity_confirmed", "Datos fiscales confirmados", "fiscal_identity");
+  await addPublicEvent(nextFlow, "fiscal_identity_validated", "Datos fiscales validados", "fiscal_identity", {
+    etapa_actual: validationResult.etapa_actual,
+  });
   if (normalizedFiscalIdentity.source === "manual") {
     await addPublicEvent(nextFlow, "fiscal_identity_completed_manually", "Datos fiscales capturados", "fiscal_identity");
   }
@@ -650,6 +678,7 @@ export async function saveBusinessData(flowId: string, businessData: BusinessDat
   });
   const nextFlow = saveFlow({ ...flow, businessData, currentStep: "monto" });
   await addPublicEvent(nextFlow, "datos_negocio_capturados", "Datos del negocio capturados", "datos_negocio");
+  await addPublicEvent(nextFlow, "business_data_saved", "Datos del negocio guardados", "datos_negocio");
   return nextFlow;
 }
 
@@ -665,6 +694,9 @@ export async function saveRequestedAmount(flowId: string, requestedAmount: numbe
   await addPublicEvent(nextFlow, "monto_solicitado_capturado", "Monto solicitado capturado", "monto", {
     requested_amount: requestedAmount,
   });
+  await addPublicEvent(nextFlow, "credit_data_saved", "Datos de crédito guardados", "monto", {
+    requested_amount: requestedAmount,
+  });
   return nextFlow;
 }
 
@@ -674,13 +706,17 @@ export async function loadSolicitudRequiredDocuments(flowId: string): Promise<So
   if (!flow) throw new Error("No encontramos esta solicitud.");
   if (flow.backendDocumentsLoaded) return structuredClone(normalizeFlow(flow));
 
-  const documents = await loadRequiredDocuments(backendTraceIdOrThrow(flow), flow.documents);
+  const loaded = await loadRequiredDocuments(backendTraceIdOrThrow(flow), flow.documents);
   const nextFlow = saveFlow({
     ...flow,
-    documents: documents.map((document) => markIneDocumentFromStart(document, flow)),
+    documents: loaded.documents.map((document) => markIneDocumentFromStart(document, flow)),
+    documentProgress: loaded.progress ?? flow.documentProgress,
     backendDocumentsLoaded: true,
   });
   await addPublicEvent(nextFlow, "lista_documentos_cargada", "Lista de documentos cargada", "documentos");
+  await addPublicEvent(nextFlow, "required_documents_loaded", "Documentos requeridos cargados", "documentos", {
+    documentProgress: nextFlow.documentProgress,
+  });
   return nextFlow;
 }
 
@@ -700,14 +736,20 @@ export async function saveDocumentFile(
     document: documentToUpload,
     file,
   });
+  const uploadedPhone = uploadResult.telefono ? digitsOnly(uploadResult.telefono) : "";
+  const nextPhoneVerification = uploadedPhone
+    ? phoneVerificationForPhone(uploadedPhone, flow.phoneVerification)
+    : flow.phoneVerification;
   const nextFlow = saveFlow({
     ...flow,
     documentProgress: uploadResult.progreso
       ? {
           totalRequired: uploadResult.progreso.total_requeridos,
           totalUploaded: uploadResult.progreso.total_cargados,
+          completed: uploadResult.progreso.completado ?? uploadResult.completado,
         }
       : flow.documentProgress,
+    phoneVerification: nextPhoneVerification,
     documents: flow.documents.map((document) =>
       document.id === documentId ? { ...document, file, status } : document,
     ),
@@ -717,6 +759,13 @@ export async function saveDocumentFile(
     document_id: documentId,
     document_label: document?.label,
     file_name: file.name,
+  });
+  await addPublicEvent(nextFlow, "document_uploaded", "Documento cargado", "documentos", {
+    document_id: documentId,
+    document_label: document?.label,
+    etapa_actual: uploadResult.etapa_actual,
+    completed: uploadResult.completado,
+    documentProgress: nextFlow.documentProgress,
   });
   return nextFlow;
 }
@@ -740,7 +789,7 @@ export async function setGuarantorChoice(flowId: string, hasGuarantor: boolean):
   const documents = hasGuarantor
     ? flow.documents
     : flow.documents.map((document) =>
-        document.id === "ine_aval" || document.id === "comprobante_domicilio_aval"
+        document.applicationType === "ine_aval" || document.applicationType === "comprobante_domicilio_aval"
           ? { ...document, file: undefined, status: "missing" as const }
           : document,
       );
@@ -754,7 +803,7 @@ export async function setCollateralChoice(flowId: string, hasCollateral: boolean
   const documents = hasCollateral
     ? flow.documents
     : flow.documents.map((document) =>
-        document.id === "garantia" ? { ...document, file: undefined, status: "missing" as const } : document,
+        document.applicationType === "garantia" ? { ...document, file: undefined, status: "missing" as const } : document,
       );
   return saveFlow({ ...flow, hasCollateral, documents });
 }
@@ -764,10 +813,11 @@ export async function sendPhoneVerificationCode(flowId: string, eventName = "sms
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
 
-  const phoneVerification = phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification);
+  const phoneVerification = phoneVerificationForPhone(flow.phoneVerification.phone || flow.basicData.phone, flow.phoneVerification);
   if (phoneVerification.phone.length !== 10) {
     throw new Error("Necesitamos tu número celular para enviarte el código.");
   }
+  const smsResult = await sendOnboardingSms(backendTraceIdOrThrow(flow));
 
   const nextFlow = saveFlow({
     ...flow,
@@ -777,6 +827,7 @@ export async function sendPhoneVerificationCode(flowId: string, eventName = "sms
       codeSent: true,
       codeVerified: false,
       sentAt: new Date().toISOString(),
+      expiresAt: smsResult.vigente_hasta,
     },
     phoneVerified: false,
     phoneVerifiedAt: undefined,
@@ -786,6 +837,10 @@ export async function sendPhoneVerificationCode(flowId: string, eventName = "sms
     maskedPhone: nextFlow.phoneVerification.maskedPhone,
     attempts: nextFlow.phoneVerification.attempts,
   });
+  await addPublicEvent(nextFlow, "sms_sent", "SMS enviado", "phone_verification", {
+    maskedPhone: nextFlow.phoneVerification.maskedPhone,
+    expiresAt: smsResult.vigente_hasta,
+  });
   return nextFlow;
 }
 
@@ -794,13 +849,14 @@ export async function verifyPhoneCode(flowId: string, code: string): Promise<Sol
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
 
-  const phoneVerification = phoneVerificationForPhone(flow.basicData.phone, flow.phoneVerification);
+  const phoneVerification = phoneVerificationForPhone(flow.phoneVerification.phone || flow.basicData.phone, flow.phoneVerification);
   if (phoneVerification.phone.length !== 10) {
     throw new Error("Necesitamos tu número celular para enviarte el código.");
   }
 
   const attempts = phoneVerification.attempts + 1;
-  const verified = code === DEMO_OTP_CODE;
+  const smsResult = await validateOnboardingSms(backendTraceIdOrThrow(flow), code);
+  const verified = smsResult.valid;
   const nextFlow = saveFlow({
     ...flow,
     currentStep: "phone_verification",
@@ -824,6 +880,11 @@ export async function verifyPhoneCode(flowId: string, code: string): Promise<Sol
     eventName: verified ? "otp_verificado" : "otp_fallido",
     maskedPhone: nextFlow.phoneVerification.maskedPhone,
     attempts,
+  });
+  await addPublicEvent(nextFlow, verified ? "sms_validated" : "sms_validation_failed", verified ? "SMS validado" : "SMS no validado", "phone_verification", {
+    maskedPhone: nextFlow.phoneVerification.maskedPhone,
+    attempts,
+    etapa_actual: smsResult.etapa_actual,
   });
 
   return nextFlow;

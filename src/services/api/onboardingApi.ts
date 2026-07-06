@@ -1,4 +1,4 @@
-import { apiRequest } from "../http/httpClient";
+import { ApiRequestError, apiRequest } from "../http/httpClient";
 import type {
   AddressCatalogResult,
   ApiEnvelope,
@@ -6,12 +6,18 @@ import type {
   SaveBusinessDataPayload,
   SaveCreditDataPayload,
   SaveGeneralDataPayload,
+  SendSmsPayload,
+  SendSmsResult,
   StartOnboardingPayload,
   StartOnboardingResult,
   StatesCatalogResult,
   OnboardingStepResult,
   UploadDocumentResult,
   UploadOnboardingDocumentPayload,
+  ValidateRfcPayload,
+  ValidateRfcResult,
+  ValidateSmsPayload,
+  ValidateSmsResult,
 } from "./onboarding.types";
 
 export function normalizeApiEnvelope<T>(envelope: ApiEnvelope<T>): T & { trace_id?: string; message?: string } {
@@ -50,6 +56,10 @@ export function saveGeneralData(payload: SaveGeneralDataPayload): Promise<Onboar
   return postEnvelope<SaveGeneralDataPayload, OnboardingStepResult>("/v1/onboarding/datos-generales", payload);
 }
 
+export function validateRfc(payload: ValidateRfcPayload): Promise<ValidateRfcResult> {
+  return postEnvelope<ValidateRfcPayload, ValidateRfcResult>("/v1/onboarding/validar-rfc", payload);
+}
+
 export function saveBusinessData(payload: SaveBusinessDataPayload): Promise<OnboardingStepResult> {
   return postEnvelope<SaveBusinessDataPayload, OnboardingStepResult>("/v1/onboarding/negocio", payload);
 }
@@ -66,6 +76,32 @@ export function getRequiredDocuments(traceId: string): Promise<RequiredDocuments
 
 export function uploadOnboardingDocument(payload: UploadOnboardingDocumentPayload): Promise<UploadDocumentResult> {
   return postEnvelope<UploadOnboardingDocumentPayload, UploadDocumentResult>("/v1/onboarding/expediente-documento", payload);
+}
+
+export function sendSms(payload: SendSmsPayload): Promise<SendSmsResult> {
+  return postEnvelope<SendSmsPayload, SendSmsResult>("/v1/onboarding/enviar-sms", payload);
+}
+
+function smsValidationFromBusinessError(error: unknown): ValidateSmsResult | null {
+  if (!(error instanceof ApiRequestError) || error.status !== 422) return null;
+  const body = error.body;
+  const envelope = body && typeof body === "object" ? body as Partial<ApiEnvelope<ValidateSmsResult>> : null;
+  const data = envelope?.data && typeof envelope.data === "object" ? envelope.data : undefined;
+  return {
+    valid: false,
+    ...(data ?? {}),
+    message: envelope?.message ?? envelope?.mensaje ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.",
+  };
+}
+
+export async function validateSms(payload: ValidateSmsPayload): Promise<ValidateSmsResult> {
+  try {
+    return await postEnvelope<ValidateSmsPayload, ValidateSmsResult>("/v1/onboarding/validar-sms", payload);
+  } catch (error) {
+    const businessResult = smsValidationFromBusinessError(error);
+    if (businessResult) return businessResult;
+    throw error;
+  }
 }
 
 export function getAddressByZipCode(cp: string): Promise<AddressCatalogResult> {

@@ -1,5 +1,6 @@
 import type { DocumentType } from "../../applications/types/application.types";
 import type { ApplicantKind, SolicitudDocument, StoredFile } from "../../solicitud/types/solicitud.types";
+import { ApiRequestError } from "../../../services/http/httpClient";
 import {
   getAddressByZipCode,
   getRequiredDocuments,
@@ -7,8 +8,11 @@ import {
   saveBusinessData,
   saveCreditData,
   saveGeneralData,
+  sendSms,
   startOnboarding,
   uploadOnboardingDocument,
+  validateRfc,
+  validateSms,
 } from "../../../services/api/onboardingApi";
 import type {
   AddressCatalogResult,
@@ -18,10 +22,14 @@ import type {
   SaveBusinessDataPayload,
   SaveCreditDataPayload,
   SaveGeneralDataPayload,
+  SendSmsResult,
   StartOnboardingFlowInput,
   StartOnboardingResult,
   StatesCatalogResult,
   UploadDocumentResult,
+  ValidateRfcPayload,
+  ValidateRfcResult,
+  ValidateSmsResult,
 } from "../../../services/api/onboarding.types";
 import { FALLBACK_STATES } from "../../solicitud/utils/generalData";
 
@@ -57,7 +65,23 @@ function friendlyErrorMessage(operation: string): string {
   if (operation === "saveGeneralData") {
     return "No pudimos guardar tus datos. Intenta nuevamente.";
   }
+  if (operation === "validateRfc") {
+    return "No pudimos validar estos datos. Revisa la información e intenta nuevamente.";
+  }
+  if (operation === "sendSms") {
+    return "No pudimos enviar el código. Intenta nuevamente.";
+  }
+  if (operation === "validateSms") {
+    return "No pudimos confirmar el código. Intenta nuevamente.";
+  }
   return "No pudimos guardar este paso. Intenta nuevamente.";
+}
+
+function isTechnicalError(error: unknown): boolean {
+  if (error instanceof ApiRequestError) {
+    return error.status === 0 || error.status >= 500;
+  }
+  return true;
 }
 
 export async function resolveApiOrMock<T>(input: {
@@ -72,7 +96,7 @@ export async function resolveApiOrMock<T>(input: {
   try {
     return await input.apiCall();
   } catch (error) {
-    if (input.fallbackToMock) {
+    if (input.fallbackToMock && isTechnicalError(error)) {
       input.onFallback?.(input.operation, error);
       return input.fallback();
     }
@@ -137,18 +161,67 @@ const knownDocumentTypes = new Set<DocumentType>([
 ]);
 
 function documentTypeFromBackendKey(key: string): DocumentType {
-  return knownDocumentTypes.has(key as DocumentType) ? (key as DocumentType) : "constancia_situacion_fiscal";
+  const normalized = key.trim().toLowerCase();
+  const mapped: Record<string, DocumentType> = {
+    ine_frontal: "ine_titular",
+    ine_reverso: "ine_titular",
+    ine_titular_frontal: "ine_titular",
+    ine_titular_reverso: "ine_titular",
+    ine_representante_frontal: "ine_representante_legal",
+    ine_representante_reverso: "ine_representante_legal",
+    ine_representante_legal_frontal: "ine_representante_legal",
+    ine_representante_legal_reverso: "ine_representante_legal",
+    comprobante_domicilio: "comprobante_domicilio_titular",
+    comprobante_domicilio_titular: "comprobante_domicilio_titular",
+    comprobante_domicilio_negocio: "comprobante_domicilio_negocio",
+    comprobante_domicilio_empresa: "comprobante_domicilio_empresa",
+    comprobante_domicilio_representante: "comprobante_domicilio_representante",
+    comprobante_domicilio_representante_legal: "comprobante_domicilio_representante",
+    opinion_sat: "opinion_positiva_sat",
+    opinion_positiva_sat: "opinion_positiva_sat",
+    estados_cuenta: "estados_cuenta_bancarios",
+    estados_cuenta_bancarios: "estados_cuenta_bancarios",
+    declaracion_anual: "declaracion_anual",
+    estados_financieros: "estados_financieros",
+    poder_representante_legal: "poder_representante_legal",
+    acta_constitutiva: "acta_constitutiva",
+    ine_aval: "ine_aval",
+    ine_aval_frontal: "ine_aval",
+    ine_aval_reverso: "ine_aval",
+    comprobante_domicilio_aval: "comprobante_domicilio_aval",
+    documento_garantia: "garantia",
+    garantia: "garantia",
+    curp: "curp",
+    constancia_situacion_fiscal: "constancia_situacion_fiscal",
+  };
+  if (mapped[normalized]) return mapped[normalized];
+  return knownDocumentTypes.has(normalized as DocumentType) ? (normalized as DocumentType) : "constancia_situacion_fiscal";
+}
+
+function isBackendDocumentRequired(document: BackendRequiredDocument): boolean {
+  return document.requerido === undefined || document.requerido === true || document.requerido === "1";
+}
+
+export interface LoadedRequiredDocumentsResult {
+  documents: SolicitudDocument[];
+  progress?: {
+    totalRequired?: number;
+    totalUploaded?: number;
+    completed?: boolean;
+  };
 }
 
 export function mapBackendDocument(document: BackendRequiredDocument, group: "solicitante" | "aval" | "garantia"): SolicitudDocument {
+  const required = isBackendDocumentRequired(document);
   return {
     id: `${group}_${String(document.id)}`,
     backendDocumentId: document.id,
     backendKey: document.clave,
+    backendCondition: document.condicionado_a,
     label: document.nombre,
     applicationType: documentTypeFromBackendKey(document.clave),
-    status: "missing",
-    optional: document.requerido === false,
+    status: document.cargado ? "uploaded" : "missing",
+    optional: !required,
   };
 }
 
@@ -158,6 +231,19 @@ export function mapBackendDocumentsToSolicitudDocuments(result: RequiredDocument
     ...(result.aval ?? []).map((document) => mapBackendDocument(document, "aval")),
     ...(result.garantia ?? []).map((document) => mapBackendDocument(document, "garantia")),
   ];
+}
+
+export function mapRequiredDocumentsResult(result: RequiredDocumentsResult): LoadedRequiredDocumentsResult {
+  return {
+    documents: mapBackendDocumentsToSolicitudDocuments(result),
+    progress: result.progreso
+      ? {
+          totalRequired: result.progreso.total_requeridos,
+          totalUploaded: result.progreso.total_cargados,
+          completed: result.progreso.completado,
+        }
+      : undefined,
+  };
 }
 
 export async function startOnboardingFlow(input: StartOnboardingFlowInput): Promise<StartOnboardingResult> {
@@ -184,6 +270,14 @@ export async function saveOnboardingGeneralData(payload: SaveGeneralDataPayload)
   );
 }
 
+export async function validateFiscalIdentityWithBackend(payload: ValidateRfcPayload): Promise<ValidateRfcResult> {
+  return withApiFallback(
+    "validateRfc",
+    () => validateRfc(payload),
+    () => ({ etapa_actual: "DATOS_NEGOCIO", validado: true, rfc: payload.rfc, curp: payload.curp }),
+  );
+}
+
 export async function saveOnboardingBusinessData(payload: SaveBusinessDataPayload): Promise<OnboardingStepResult> {
   return withApiFallback(
     "saveBusinessData",
@@ -200,11 +294,14 @@ export async function saveOnboardingCreditData(payload: SaveCreditDataPayload): 
   );
 }
 
-export async function loadRequiredDocuments(traceId: string, fallbackDocuments: SolicitudDocument[]): Promise<SolicitudDocument[]> {
+export async function loadRequiredDocuments(
+  traceId: string,
+  fallbackDocuments: SolicitudDocument[],
+): Promise<LoadedRequiredDocumentsResult> {
   return withApiFallback(
     "getRequiredDocuments",
-    async () => mapBackendDocumentsToSolicitudDocuments(await getRequiredDocuments(traceId)),
-    () => fallbackDocuments,
+    async () => mapRequiredDocumentsResult(await getRequiredDocuments(traceId)),
+    () => ({ documents: fallbackDocuments }),
   );
 }
 
@@ -231,6 +328,25 @@ export async function uploadDocument(payload: {
     () => ({
       documento_id: payload.document.backendDocumentId ?? payload.document.id,
     }),
+  );
+}
+
+export async function sendOnboardingSms(traceId: string): Promise<SendSmsResult> {
+  return withApiFallback(
+    "sendSms",
+    () => sendSms({ trace_id: traceId }),
+    () => ({
+      vigente_hasta: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      message: "Te enviamos un código por SMS.",
+    }),
+  );
+}
+
+export async function validateOnboardingSms(traceId: string, code: string): Promise<ValidateSmsResult> {
+  return withApiFallback(
+    "validateSms",
+    () => validateSms({ trace_id: traceId, codigo: code }),
+    () => ({ valid: code === "123456", etapa_actual: code === "123456" ? "AUTORIZACION" : "VERIFICACION_TELEFONICA" }),
   );
 }
 

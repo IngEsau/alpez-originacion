@@ -65,6 +65,19 @@ export interface OnboardingStepResult {
   data?: Record<string, unknown>;
 }
 
+export interface ValidateRfcPayload {
+  trace_id: string;
+  rfc: string;
+  curp: string;
+}
+
+export interface ValidateRfcResult {
+  etapa_actual?: string;
+  validado?: boolean;
+  rfc?: string;
+  curp?: string;
+}
+
 export interface RequiredDocumentsPayload {
   trace_id: string;
 }
@@ -73,13 +86,20 @@ export interface BackendRequiredDocument {
   id: string | number;
   clave: string;
   nombre: string;
-  requerido?: boolean;
+  condicionado_a?: "NINGUNO" | "AVAL" | "GARANTIA" | string;
+  requerido?: "0" | "1" | boolean;
+  cargado?: boolean;
 }
 
 export interface RequiredDocumentsResult {
   solicitante: BackendRequiredDocument[];
   aval?: BackendRequiredDocument[];
   garantia?: BackendRequiredDocument[];
+  progreso?: {
+    total_requeridos?: number;
+    total_cargados?: number;
+    completado?: boolean;
+  };
 }
 
 export interface OnboardingDocumentItem {
@@ -102,10 +122,34 @@ export interface UploadOnboardingDocumentPayload {
 export interface UploadDocumentResult {
   documento_id: string | number;
   clave?: string;
+  etapa_actual?: string;
+  completado?: boolean;
+  telefono?: string;
   progreso?: {
     total_requeridos?: number;
     total_cargados?: number;
+    completado?: boolean;
   };
+}
+
+export interface SendSmsPayload {
+  trace_id: string;
+}
+
+export interface SendSmsResult {
+  vigente_hasta?: string;
+  message?: string;
+}
+
+export interface ValidateSmsPayload {
+  trace_id: string;
+  codigo: string;
+}
+
+export interface ValidateSmsResult {
+  valid: boolean;
+  etapa_actual?: string;
+  message?: string;
 }
 
 export interface AddressCatalogResult {
