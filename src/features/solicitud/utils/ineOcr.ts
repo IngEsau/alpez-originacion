@@ -67,9 +67,30 @@ function cleanIdentityCode(value: string | undefined): string | undefined {
 function normalizeGender(value: string | undefined): "M" | "F" | "O" | undefined {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) return undefined;
-  if (["h", "hombre", "m", "masculino"].includes(normalized)) return "M";
-  if (["mujer", "f", "femenino"].includes(normalized)) return "F";
+  if (["h", "hombre", "masculino"].includes(normalized)) return "M";
+  if (["m", "mujer", "f", "femenino"].includes(normalized)) return "F";
   return "O";
+}
+
+function normalizeBirthDate(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const normalized = value.trim();
+  const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return normalized;
+  const slashMatch = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+  return undefined;
+}
+
+function extractZipCode(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const match = value?.match(/\b\d{5}\b/);
+    if (match) return match[0];
+  }
+  return undefined;
 }
 
 export function mapIneOcrToGeneralData(ocr: unknown): Partial<OnboardingGeneralData> {
@@ -96,20 +117,30 @@ export function mapIneOcrToGeneralData(ocr: unknown): Partial<OnboardingGeneralD
 
   const curp = cleanIdentityCode(findValueByAliases(ocr, KEY_ALIASES.curp));
   const rfc = cleanIdentityCode(findValueByAliases(ocr, KEY_ALIASES.rfc));
-  const birthDate = cleanText(findValueByAliases(ocr, KEY_ALIASES.birthDate));
+  const birthDate = normalizeBirthDate(cleanText(findValueByAliases(ocr, KEY_ALIASES.birthDate)));
   const gender = normalizeGender(cleanText(findValueByAliases(ocr, KEY_ALIASES.gender)));
   const address = cleanText(findValueByAliases(ocr, KEY_ALIASES.address));
-  const zipCode = findValueByAliases(ocr, KEY_ALIASES.zipCode)?.replace(/\D/g, "").slice(0, 5);
+  const rawZipCode = findValueByAliases(ocr, KEY_ALIASES.zipCode)?.replace(/\D/g, "").slice(0, 5);
   const state = cleanText(findValueByAliases(ocr, KEY_ALIASES.state));
   const municipality = cleanText(findValueByAliases(ocr, KEY_ALIASES.municipality));
   const neighborhood = cleanText(findValueByAliases(ocr, KEY_ALIASES.neighborhood));
+  const zipCode = rawZipCode || extractZipCode(neighborhood, address);
 
   if (birthDate) result.fechaNacimiento = birthDate;
   if (gender) result.genero = gender;
   if (address) result.direccion = toTitleCase(address);
   if (zipCode) result.codigoPostal = zipCode;
-  if (state) result.estadoNombre = toTitleCase(state);
-  if (municipality) result.municipioNombre = toTitleCase(municipality);
+  if (state && /^\d+$/.test(state)) {
+    result.estadoNacimientoId = Number(state);
+    result.estadoId = state;
+  } else if (state) {
+    result.estadoNombre = toTitleCase(state);
+  }
+  if (municipality && /^\d+$/.test(municipality)) {
+    result.municipioId = municipality;
+  } else if (municipality) {
+    result.municipioNombre = toTitleCase(municipality);
+  }
   if (neighborhood) result.coloniaNombre = toTitleCase(neighborhood);
 
   return result;
@@ -128,14 +159,21 @@ export function extractFiscalIdentityFromOcr(ocr: unknown): Partial<Pick<FiscalI
 export function applyIneOcrToGeneralData(
   generalData: OnboardingGeneralData | undefined,
   ocr: unknown,
+  options: { replaceFields?: Array<keyof OnboardingGeneralData> } = {},
 ): { generalData: OnboardingGeneralData; prefilledFields: Array<keyof OnboardingGeneralData> } {
   const mapped = mapIneOcrToGeneralData(ocr);
   const nextData = { ...EMPTY_ONBOARDING_GENERAL_DATA, ...generalData };
   const prefilledFields: Array<keyof OnboardingGeneralData> = [];
+  const replaceFields = new Set(options.replaceFields ?? []);
 
   for (const [field, value] of Object.entries(mapped) as Array<[keyof OnboardingGeneralData, string | number | null]>) {
     const currentValue = nextData[field];
-    if (value !== undefined && value !== null && String(value).trim() && !String(currentValue ?? "").trim()) {
+    if (
+      value !== undefined &&
+      value !== null &&
+      String(value).trim() &&
+      (!String(currentValue ?? "").trim() || replaceFields.has(field))
+    ) {
       (nextData[field] as string | number | null) = value;
       prefilledFields.push(field);
     }

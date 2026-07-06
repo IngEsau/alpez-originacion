@@ -145,19 +145,26 @@ function getDocument(flow: SolicitudFlowState, id: string): SolicitudDocument | 
 
 function visibleSolicitudDocuments(flow: SolicitudFlowState): SolicitudDocument[] {
   return flow.documents.filter((document) => {
-    if (
-      (document.applicationType === "ine_aval" || document.applicationType === "comprobante_domicilio_aval") &&
-      !flow.hasGuarantor
-    ) {
-      return false;
+    const isAvalDocument =
+      document.backendGroup === "aval" ||
+      document.applicationType === "ine_aval" ||
+      document.applicationType === "comprobante_domicilio_aval";
+    const isGuaranteeDocument = document.backendGroup === "garantia" || document.applicationType === "garantia";
+
+    if (isAvalDocument && !flow.hasGuarantor) {
+      return Boolean(flow.hasGuarantor);
     }
-    if (document.applicationType === "garantia" && !flow.hasCollateral) return false;
+    if (isGuaranteeDocument && !flow.hasCollateral) return false;
     return true;
   });
 }
 
 function documentCounts(flow: SolicitudFlowState): { added: number; pending: number } {
-  if (flow.documentProgress?.totalRequired !== undefined || flow.documentProgress?.totalUploaded !== undefined) {
+  if (
+    (flow.documentProgress?.totalRequired !== undefined || flow.documentProgress?.totalUploaded !== undefined) &&
+    flow.hasGuarantor !== false &&
+    flow.hasCollateral !== false
+  ) {
     const added = flow.documentProgress.totalUploaded ?? 0;
     const total = flow.documentProgress.totalRequired ?? visibleSolicitudDocuments(flow).length;
     return { added, pending: Math.max(total - added, 0) };
@@ -930,7 +937,7 @@ export function SolicitudFlowPage() {
             { key: "back", title: "Reverso de la INE", file: flow.ineBack },
           ].map((item) => (
             <label
-              className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-[8px] border-2 border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-[#0F4C81] hover:bg-[#F5FAFF]"
+              className="relative flex min-h-44 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[8px] border-2 border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-[#0F4C81] hover:bg-[#F5FAFF]"
               key={item.key}
             >
               <FileUp className="mb-3 h-8 w-8 text-[#0F4C81]" />
@@ -939,11 +946,13 @@ export function SolicitudFlowPage() {
               <FilePreview file={item.file} />
               <input
                 accept="image/*,.pdf"
-                className="sr-only"
+                aria-label={`Agregar ${item.title}`}
+                className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                 type="file"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (!file) return;
+                  event.currentTarget.value = "";
                   void storedFileFromFile(file).then((storedFile) =>
                     runAction(() => saveIneFile(flow.flowId, item.key as "front" | "back", storedFile)),
                   );
@@ -1220,37 +1229,41 @@ export function SolicitudFlowPage() {
 
   if (flow.currentStep === "documentos") {
     const counts = documentCounts(flow);
+    const visibleDocuments = visibleSolicitudDocuments(flow);
+    const documentsByBackendGroup = (group: SolicitudDocument["backendGroup"]) =>
+      visibleDocuments.filter((document) => document.backendGroup === group);
     const documentsByType = (types: string[]) =>
-      visibleSolicitudDocuments(flow).filter((document) => types.includes(document.applicationType));
-    const titularDocuments = documentsByType([
-      "ine_titular",
-      "curp",
-      "constancia_situacion_fiscal",
-      "comprobante_domicilio_titular",
-      "comprobante_domicilio_negocio",
-      "opinion_positiva_sat",
-    ]);
-    const financialDocuments = (flow.applicantKind === "company"
-      ? ["estados_cuenta_bancarios", "declaracion_anual", "estados_financieros"]
-      : ["estados_cuenta_bancarios", "declaracion_anual"])
-      .flatMap((type) => documentsByType([type]));
-    const companyEssentialDocuments = documentsByType([
-      "ine_representante_legal",
-      "comprobante_domicilio_empresa",
-      "comprobante_domicilio_representante",
-      "constancia_situacion_fiscal",
-      "opinion_positiva_sat",
-      "poder_representante_legal",
-      "acta_constitutiva",
-    ]);
-    const guarantorDocuments = documentsByType(["ine_aval", "comprobante_domicilio_aval"]);
-    const collateralDocument = documentsByType(["garantia"])[0];
+      visibleDocuments.filter((document) => !document.backendGroup && types.includes(document.applicationType));
+    const holderDocuments = flow.backendDocumentsLoaded
+      ? documentsByBackendGroup("solicitante")
+      : documentsByType([
+          "ine_titular",
+          "ine_representante_legal",
+          "curp",
+          "constancia_situacion_fiscal",
+          "comprobante_domicilio_titular",
+          "comprobante_domicilio_negocio",
+          "comprobante_domicilio_empresa",
+          "comprobante_domicilio_representante",
+          "opinion_positiva_sat",
+          "poder_representante_legal",
+          "acta_constitutiva",
+        ]);
+    const guarantorDocuments = flow.backendDocumentsLoaded
+      ? documentsByBackendGroup("aval")
+      : documentsByType(["ine_aval", "comprobante_domicilio_aval"]);
+    const guaranteeDocuments = flow.backendDocumentsLoaded
+      ? documentsByBackendGroup("garantia")
+      : documentsByType(["garantia"]);
     const hasMissing = counts.pending > 0;
-    const isIneStartupDocument = (document: SolicitudDocument) =>
-      document.applicationType === "ine_titular" ||
-      document.applicationType === "ine_representante_legal" ||
-      document.backendKey?.toLowerCase().includes("ine") ||
-      document.label.toLowerCase().includes("ine");
+    const isIneStartupDocument = (document: SolicitudDocument) => {
+      const backendKey = document.backendKey?.toLowerCase() ?? "";
+      return (
+        document.applicationType === "ine_titular" ||
+        document.applicationType === "ine_representante_legal" ||
+        (document.backendGroup === "solicitante" && backendKey.includes("ine"))
+      );
+    };
     const saveFile = (document: SolicitudDocument, file: File) =>
       storedFileFromFile(file).then((storedFile) => runAction(() => saveDocumentFile(flow.flowId, document.id, storedFile)));
     const renderDocumentCard = (document: SolicitudDocument) => {
@@ -1312,7 +1325,8 @@ export function SolicitudFlowPage() {
       );
     };
     const renderIneCard = (document: SolicitudDocument) => {
-      const hasIne = Boolean(flow.ineFront && flow.ineBack);
+      const hasIne = document.status === "uploaded" || Boolean(flow.ineFront && flow.ineBack);
+      const canChangeIne = Boolean(flow.ineFront || flow.ineBack) && !document.backendDocumentId;
 
       return (
         <div className="rounded-[8px] border border-slate-200 bg-white p-4" key={document.id}>
@@ -1331,15 +1345,15 @@ export function SolicitudFlowPage() {
               </div>
               {hasIne ? (
                 <div className="mt-2 space-y-1 text-sm text-slate-500">
-                  <p className="truncate">Frente: {flow.ineFront?.name}</p>
-                  <p className="truncate">Reverso: {flow.ineBack?.name}</p>
+                  {flow.ineFront && <p className="truncate">Frente: {flow.ineFront.name}</p>}
+                  {flow.ineBack && <p className="truncate">Reverso: {flow.ineBack.name}</p>}
                 </div>
               ) : (
                 <p className="mt-2 text-sm text-slate-500">Necesitamos frente y reverso para continuar la revisión.</p>
               )}
             </div>
             <div className="flex flex-wrap gap-2 sm:justify-end">
-              {hasIne && (
+              {hasIne && flow.ineFront && (
                 <Button
                   icon={<Eye className="h-4 w-4" />}
                   size="sm"
@@ -1350,35 +1364,38 @@ export function SolicitudFlowPage() {
                   Ver archivo
                 </Button>
               )}
-              <Button
-                icon={hasIne ? <RefreshCw className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
-                size="sm"
-                type="button"
-                variant="outline"
-                onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "ine"))}
-              >
-                {hasIne ? "Cambiar" : "Agregar"}
-              </Button>
+              {(!hasIne || canChangeIne) && (
+                <Button
+                  icon={hasIne ? <RefreshCw className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                  onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "ine"))}
+                >
+                  {hasIne ? "Cambiar" : "Agregar"}
+                </Button>
+              )}
             </div>
           </div>
         </div>
       );
     };
-    const renderSection = (title: string, description: string, documents: SolicitudDocument[]) => (
-      <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
-        <div className="mb-4">
-          <h2 className="text-lg font-bold text-slate-950">{title}</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
-        </div>
-        <div className="grid gap-3">
-          {documents.map((document) =>
-            isIneStartupDocument(document)
-              ? renderIneCard(document)
-              : renderDocumentCard(document),
-          )}
-        </div>
-      </section>
-    );
+    const renderSection = (title: string, description: string, documents: SolicitudDocument[]) =>
+      documents.length > 0 ? (
+        <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-slate-950">{title}</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
+          </div>
+          <div className="grid gap-3">
+            {documents.map((document) =>
+              isIneStartupDocument(document)
+                ? renderIneCard(document)
+                : renderDocumentCard(document),
+            )}
+          </div>
+        </section>
+      ) : null;
     const renderChoice = (value: boolean | undefined, onSelect: (value: boolean) => void) => (
       <div className="grid gap-3 sm:grid-cols-2">
         {[
@@ -1439,99 +1456,47 @@ export function SolicitudFlowPage() {
             Puedes continuar, pero es posible que un asesor te pida completar algunos documentos después.
           </div>
         )}
-        {flow.applicantKind === "physical" ? (
-          <div className="grid gap-5">
-            {renderSection(
-              "Documentos del titular",
-              "Agrega los documentos principales para revisar tu solicitud.",
-              titularDocuments,
-            )}
-            {renderSection(
-              "Información financiera",
-              "Estos documentos ayudan a revisar el comportamiento de tu negocio.",
-              financialDocuments,
-            )}
-            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-4">
-                <h2 className="text-lg font-bold text-slate-950">Aval y garantía</h2>
-              </div>
-              <div className="grid gap-5">
-                <div className="rounded-[8px] bg-white p-4">
-                  <p className="mb-3 font-bold text-slate-950">¿Tu solicitud contará con aval?</p>
-                  {renderChoice(flow.hasGuarantor, (value) =>
-                    runAction(() => setGuarantorChoice(flow.flowId, value)),
-                  )}
-                  {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
-                  {flow.hasGuarantor === false && (
-                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
-                      Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
-                    </p>
-                  )}
-                </div>
-                <div className="rounded-[8px] bg-white p-4">
-                  <p className="mb-3 font-bold text-slate-950">¿Cuentas con una garantía para esta solicitud?</p>
-                  {renderChoice(flow.hasCollateral, (value) =>
-                    runAction(() => setCollateralChoice(flow.flowId, value)),
-                  )}
-                  {flow.hasCollateral === true && collateralDocument && (
-                    <div className="mt-4">{renderDocumentCard(collateralDocument)}</div>
-                  )}
-                  {flow.hasCollateral === false && (
-                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
-                      Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
-        ) : (
-          <div className="grid gap-5">
-            {renderSection(
-              "Documentos de la empresa y representante",
-              "Agrega los documentos principales de la empresa y de su representante legal.",
-              companyEssentialDocuments,
-            )}
-            {renderSection(
-              "Información financiera",
-              "Estos documentos ayudan a revisar el comportamiento de la empresa.",
-              financialDocuments,
-            )}
-            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
-              <div className="mb-4">
-                <h2 className="text-lg font-bold text-slate-950">Aval y garantía</h2>
-              </div>
-              <div className="grid gap-5">
-                <div className="rounded-[8px] bg-white p-4">
-                  <p className="mb-3 font-bold text-slate-950">¿La solicitud contará con aval?</p>
-                  {renderChoice(flow.hasGuarantor, (value) =>
-                    runAction(() => setGuarantorChoice(flow.flowId, value)),
-                  )}
-                  {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
-                  {flow.hasGuarantor === false && (
-                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
-                      Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
-                    </p>
-                  )}
-                </div>
-                <div className="rounded-[8px] bg-white p-4">
-                  <p className="mb-3 font-bold text-slate-950">¿Cuentan con una garantía para esta solicitud?</p>
-                  {renderChoice(flow.hasCollateral, (value) =>
-                    runAction(() => setCollateralChoice(flow.flowId, value)),
-                  )}
-                  {flow.hasCollateral === true && collateralDocument && (
-                    <div className="mt-4">{renderDocumentCard(collateralDocument)}</div>
-                  )}
-                  {flow.hasCollateral === false && (
-                    <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
-                      Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
+        <div className="grid gap-5">
+          {renderSection(
+            "Documentos del titular",
+            "Agrega los documentos principales para revisar tu solicitud.",
+            holderDocuments,
+          )}
+          <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-slate-950">Aval</h2>
+            </div>
+            <div className="rounded-[8px] bg-white p-4">
+              <p className="mb-3 font-bold text-slate-950">¿Tu solicitud contará con aval?</p>
+              {renderChoice(flow.hasGuarantor, (value) =>
+                runAction(() => setGuarantorChoice(flow.flowId, value)),
+              )}
+              {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
+              {flow.hasGuarantor === false && (
+                <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                  Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
+                </p>
+              )}
+            </div>
+          </section>
+          <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-slate-950">Garantía</h2>
+            </div>
+            <div className="rounded-[8px] bg-white p-4">
+              <p className="mb-3 font-bold text-slate-950">¿Cuentas con una garantía para esta solicitud?</p>
+              {renderChoice(flow.hasCollateral, (value) =>
+                runAction(() => setCollateralChoice(flow.flowId, value)),
+              )}
+              {flow.hasCollateral === true && <div className="mt-4 grid gap-3">{guaranteeDocuments.map(renderDocumentCard)}</div>}
+              {flow.hasCollateral === false && (
+                <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                  Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
+                </p>
+              )}
+            </div>
+          </section>
+        </div>
       </QuestionScreen>
     );
   }

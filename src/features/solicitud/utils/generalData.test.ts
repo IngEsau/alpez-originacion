@@ -78,6 +78,20 @@ describe("validateGeneralData", () => {
     expect(normalized.telefono).toBe("2211244333");
     expect(normalized.correo).toBe("erickgaytan53@gmail.com");
   });
+
+  it("rejects current or future birth dates", () => {
+    const today = new Date().toISOString().slice(0, 10);
+
+    expect(validateGeneralData({
+      ...completeGeneralData,
+      fechaNacimiento: today,
+    }).fechaNacimiento).toBe("La fecha de nacimiento debe ser anterior a hoy.");
+
+    expect(validateGeneralData({
+      ...completeGeneralData,
+      fechaNacimiento: "2999-01-01",
+    }).fechaNacimiento).toBe("La fecha de nacimiento debe ser anterior a hoy.");
+  });
 });
 
 describe("fiscal identity", () => {

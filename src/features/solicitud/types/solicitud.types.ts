@@ -59,6 +59,7 @@ export interface SolicitudDocument {
   backendDocumentId?: string | number;
   backendKey?: string;
   backendCondition?: string;
+  backendGroup?: "solicitante" | "aval" | "garantia";
 }
 
 export interface BasicData {

@@ -3,6 +3,7 @@ import {
   isApiFallbackEnabled,
   isRealApiEnabled,
   mapBackendDocumentsToSolicitudDocuments,
+  mapRequiredDocumentsResponse,
   mapRequiredDocumentsResult,
   resolveApiOrMock,
 } from "./onboardingService";
@@ -99,7 +100,7 @@ describe("mapBackendDocumentsToSolicitudDocuments", () => {
           id: 10,
           clave: "CURP",
           nombre: "CURP",
-          requerido: "1",
+          requerido: 1,
           cargado: true,
         },
       ],
@@ -121,6 +122,7 @@ describe("mapBackendDocumentsToSolicitudDocuments", () => {
         backendKey: "CURP",
         label: "CURP",
         applicationType: "curp",
+        backendGroup: "solicitante",
         status: "uploaded",
         optional: false,
       }),
@@ -131,9 +133,66 @@ describe("mapBackendDocumentsToSolicitudDocuments", () => {
         backendCondition: "AVAL",
         label: "INE del aval",
         applicationType: "ine_aval",
+        backendGroup: "aval",
         optional: true,
       }),
     ]);
+  });
+
+  it("maps the real required documents response into grouped document lists", () => {
+    const result = mapRequiredDocumentsResponse({
+      solicitante: [
+        {
+          id: 1,
+          clave: "INE_FRONTAL",
+          nombre: "INE Frontal del solicitante",
+          condicionado_a: "NINGUNO",
+          requerido: 1,
+          cargado: true,
+        },
+      ],
+      aval: [
+        {
+          id: 6,
+          clave: "COMPROBANTE_DOMICILIO_AVAL",
+          nombre: "Comprobante de domicilio del aval",
+          condicionado_a: "AVAL",
+          requerido: "1",
+          cargado: false,
+        },
+      ],
+      garantia: [],
+      progreso: {
+        total_requeridos: 7,
+        total_cargados: 2,
+        completado: false,
+      },
+    });
+
+    expect(result.holderDocuments).toEqual([
+      expect.objectContaining({
+        backendDocumentId: 1,
+        backendKey: "INE_FRONTAL",
+        backendGroup: "solicitante",
+        applicationType: "ine_titular",
+        status: "uploaded",
+      }),
+    ]);
+    expect(result.avalDocuments).toEqual([
+      expect.objectContaining({
+        backendDocumentId: 6,
+        backendCondition: "AVAL",
+        backendGroup: "aval",
+        applicationType: "comprobante_domicilio_aval",
+        status: "missing",
+      }),
+    ]);
+    expect(result.guaranteeDocuments).toEqual([]);
+    expect(result.progress).toEqual({
+      totalRequired: 7,
+      totalUploaded: 2,
+      completed: false,
+    });
   });
 
   it("maps backend document progress", () => {

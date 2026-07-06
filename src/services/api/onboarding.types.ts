@@ -87,7 +87,7 @@ export interface BackendRequiredDocument {
   clave: string;
   nombre: string;
   condicionado_a?: "NINGUNO" | "AVAL" | "GARANTIA" | string;
-  requerido?: "0" | "1" | boolean;
+  requerido?: "0" | "1" | 0 | 1 | boolean;
   cargado?: boolean;
 }
 

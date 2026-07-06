@@ -572,6 +572,7 @@ export async function confirmIneReview(flowId: string, accepted: boolean): Promi
   const ocrPrefill = applyIneOcrToGeneralData(
     flow.generalData,
     onboardingResult?.ocr,
+    { replaceFields: flow.ocrPrefillFields },
   );
   const nextGeneralData = accepted ? ocrPrefill.generalData : flow.generalData;
   const currentFiscalIdentity = flow.fiscalIdentity ?? EMPTY_FISCAL_IDENTITY;
@@ -789,7 +790,9 @@ export async function setGuarantorChoice(flowId: string, hasGuarantor: boolean):
   const documents = hasGuarantor
     ? flow.documents
     : flow.documents.map((document) =>
-        document.applicationType === "ine_aval" || document.applicationType === "comprobante_domicilio_aval"
+        document.backendGroup === "aval" ||
+        document.applicationType === "ine_aval" ||
+        document.applicationType === "comprobante_domicilio_aval"
           ? { ...document, file: undefined, status: "missing" as const }
           : document,
       );
@@ -803,7 +806,9 @@ export async function setCollateralChoice(flowId: string, hasCollateral: boolean
   const documents = hasCollateral
     ? flow.documents
     : flow.documents.map((document) =>
-        document.applicationType === "garantia" ? { ...document, file: undefined, status: "missing" as const } : document,
+        document.backendGroup === "garantia" || document.applicationType === "garantia"
+          ? { ...document, file: undefined, status: "missing" as const }
+          : document,
       );
   return saveFlow({ ...flow, hasCollateral, documents });
 }

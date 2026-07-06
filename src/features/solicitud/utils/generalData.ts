@@ -179,7 +179,18 @@ export function validateGeneralData(data: OnboardingGeneralData): Partial<Record
 
   if (!normalized.primerNombre) errors.primerNombre = "Ingresa tu primer nombre.";
   if (!normalized.apellidoPaterno) errors.apellidoPaterno = "Ingresa tu apellido paterno.";
-  if (!normalized.fechaNacimiento) errors.fechaNacimiento = "Selecciona tu fecha de nacimiento.";
+  if (!normalized.fechaNacimiento) {
+    errors.fechaNacimiento = "Selecciona tu fecha de nacimiento.";
+  } else {
+    const birthDate = new Date(`${normalized.fechaNacimiento}T00:00:00`);
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (Number.isNaN(birthDate.getTime())) {
+      errors.fechaNacimiento = "Selecciona una fecha de nacimiento válida.";
+    } else if (birthDate >= todayStart) {
+      errors.fechaNacimiento = "La fecha de nacimiento debe ser anterior a hoy.";
+    }
+  }
   if (!normalized.genero) errors.genero = "Selecciona una opción.";
   if (normalized.telefono && normalized.telefono.length !== 10) {
     errors.telefono = "Ingresa un celular válido de 10 dígitos.";

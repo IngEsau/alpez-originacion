@@ -199,7 +199,7 @@ function documentTypeFromBackendKey(key: string): DocumentType {
 }
 
 function isBackendDocumentRequired(document: BackendRequiredDocument): boolean {
-  return document.requerido === undefined || document.requerido === true || document.requerido === "1";
+  return document.requerido === undefined || document.requerido === true || document.requerido === "1" || document.requerido === 1;
 }
 
 export interface LoadedRequiredDocumentsResult {
@@ -211,6 +211,13 @@ export interface LoadedRequiredDocumentsResult {
   };
 }
 
+export interface MappedRequiredDocumentsResponse {
+  holderDocuments: SolicitudDocument[];
+  avalDocuments: SolicitudDocument[];
+  guaranteeDocuments: SolicitudDocument[];
+  progress?: LoadedRequiredDocumentsResult["progress"];
+}
+
 export function mapBackendDocument(document: BackendRequiredDocument, group: "solicitante" | "aval" | "garantia"): SolicitudDocument {
   const required = isBackendDocumentRequired(document);
   return {
@@ -218,6 +225,7 @@ export function mapBackendDocument(document: BackendRequiredDocument, group: "so
     backendDocumentId: document.id,
     backendKey: document.clave,
     backendCondition: document.condicionado_a,
+    backendGroup: group,
     label: document.nombre,
     applicationType: documentTypeFromBackendKey(document.clave),
     status: document.cargado ? "uploaded" : "missing",
@@ -233,16 +241,32 @@ export function mapBackendDocumentsToSolicitudDocuments(result: RequiredDocument
   ];
 }
 
-export function mapRequiredDocumentsResult(result: RequiredDocumentsResult): LoadedRequiredDocumentsResult {
+export function mapRequiredDocumentsResponse(result: RequiredDocumentsResult): MappedRequiredDocumentsResponse {
+  const progress = result.progreso
+    ? {
+        totalRequired: result.progreso.total_requeridos,
+        totalUploaded: result.progreso.total_cargados,
+        completed: result.progreso.completado,
+      }
+    : undefined;
+
   return {
-    documents: mapBackendDocumentsToSolicitudDocuments(result),
-    progress: result.progreso
-      ? {
-          totalRequired: result.progreso.total_requeridos,
-          totalUploaded: result.progreso.total_cargados,
-          completed: result.progreso.completado,
-        }
-      : undefined,
+    holderDocuments: result.solicitante.map((document) => mapBackendDocument(document, "solicitante")),
+    avalDocuments: (result.aval ?? []).map((document) => mapBackendDocument(document, "aval")),
+    guaranteeDocuments: (result.garantia ?? []).map((document) => mapBackendDocument(document, "garantia")),
+    progress,
+  };
+}
+
+export function mapRequiredDocumentsResult(result: RequiredDocumentsResult): LoadedRequiredDocumentsResult {
+  const mapped = mapRequiredDocumentsResponse(result);
+  return {
+    documents: [
+      ...mapped.holderDocuments,
+      ...mapped.avalDocuments,
+      ...mapped.guaranteeDocuments,
+    ],
+    progress: mapped.progress,
   };
 }
 

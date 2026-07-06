@@ -27,6 +27,37 @@ describe("mapIneOcrToGeneralData", () => {
   it("returns empty data when OCR is unavailable", () => {
     expect(mapIneOcrToGeneralData(null)).toEqual({});
   });
+
+  it("maps real INE OCR response fields into general data", () => {
+    const result = mapIneOcrToGeneralData({
+      ocr: {
+        calle: "C 5 DE MAYO 16",
+        colonia: "PBLO SANTIAGO MOMOXPAN 72760",
+        curp: "PETL551201MPLTPL00",
+        estado: "21",
+        fechaNacimiento: "01/12/1955",
+        municipio: "141",
+        nombres: "MARIA LILIA MARGARITA",
+        primerApellido: "PETLACALCO",
+        segundoApellido: "TEPOZ",
+        sexo: "M",
+      },
+    });
+
+    expect(result).toMatchObject({
+      primerNombre: "Maria Lilia Margarita",
+      apellidoPaterno: "Petlacalco",
+      apellidoMaterno: "Tepoz",
+      fechaNacimiento: "1955-12-01",
+      genero: "F",
+      direccion: "C 5 De Mayo 16",
+      codigoPostal: "72760",
+      estadoNacimientoId: 21,
+      estadoId: "21",
+      municipioId: "141",
+      coloniaNombre: "Pblo Santiago Momoxpan 72760",
+    });
+  });
 });
 
 describe("applyIneOcrToGeneralData", () => {
@@ -55,6 +86,27 @@ describe("applyIneOcrToGeneralData", () => {
 
     expect(result.generalData.primerNombre).toBe("Nombre");
     expect(result.generalData.apellidoPaterno).toBe("Manual");
+  });
+
+  it("replaces fields that were previously prefilled from another INE", () => {
+    const result = applyIneOcrToGeneralData(
+      {
+        ...EMPTY_ONBOARDING_GENERAL_DATA,
+        primerNombre: "Daniel Esau",
+        apellidoPaterno: "Negrete",
+        apellidoMaterno: "Aguilar",
+      },
+      {
+        nombres: "MARIA LILIA MARGARITA",
+        primerApellido: "PETLACALCO",
+        segundoApellido: "TEPOZ",
+      },
+      { replaceFields: ["primerNombre", "apellidoPaterno", "apellidoMaterno"] },
+    );
+
+    expect(result.generalData.primerNombre).toBe("Maria Lilia Margarita");
+    expect(result.generalData.apellidoPaterno).toBe("Petlacalco");
+    expect(result.generalData.apellidoMaterno).toBe("Tepoz");
   });
 });
 
