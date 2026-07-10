@@ -833,6 +833,7 @@ export async function sendPhoneVerificationCode(flowId: string, eventName = "sms
       codeVerified: false,
       sentAt: new Date().toISOString(),
       expiresAt: smsResult.vigente_hasta,
+      lastError: undefined,
     },
     phoneVerified: false,
     phoneVerifiedAt: undefined,
@@ -849,6 +850,10 @@ export async function sendPhoneVerificationCode(flowId: string, eventName = "sms
   return nextFlow;
 }
 
+export function isSmsVerificationApproved(result: { valid: unknown }): boolean {
+  return result.valid === true;
+}
+
 export async function verifyPhoneCode(flowId: string, code: string): Promise<SolicitudFlowState> {
   await wait(650);
   const flow = readStore().find((item) => item.flowId === flowId);
@@ -861,7 +866,7 @@ export async function verifyPhoneCode(flowId: string, code: string): Promise<Sol
 
   const attempts = phoneVerification.attempts + 1;
   const smsResult = await validateOnboardingSms(backendTraceIdOrThrow(flow), code);
-  const verified = smsResult.valid;
+  const verified = isSmsVerificationApproved(smsResult);
   const nextFlow = saveFlow({
     ...flow,
     currentStep: "phone_verification",
@@ -871,6 +876,7 @@ export async function verifyPhoneCode(flowId: string, code: string): Promise<Sol
       codeVerified: verified,
       attempts,
       verifiedAt: verified ? new Date().toISOString() : phoneVerification.verifiedAt,
+      lastError: verified ? undefined : smsResult.message ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.",
     },
     phoneVerified: verified,
     phoneVerifiedAt: verified ? new Date().toISOString() : flow.phoneVerifiedAt,

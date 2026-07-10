@@ -120,6 +120,7 @@ export interface PhoneVerificationState {
   sentAt?: string;
   expiresAt?: string;
   verifiedAt?: string;
+  lastError?: string;
   attempts: number;
 }
 

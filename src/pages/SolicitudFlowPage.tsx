@@ -122,12 +122,6 @@ function storedFileFromFile(file: File): Promise<StoredFile> {
   });
 }
 
-function openStoredFile(file?: StoredFile): void {
-  if (file?.previewUrl) {
-    window.open(file.previewUrl, "_blank", "noopener,noreferrer");
-  }
-}
-
 function isImageFile(file?: StoredFile): boolean {
   return Boolean(file?.type.startsWith("image/") && file.previewUrl);
 }
@@ -160,23 +154,9 @@ function visibleSolicitudDocuments(flow: SolicitudFlowState): SolicitudDocument[
 }
 
 function documentCounts(flow: SolicitudFlowState): { added: number; pending: number } {
-  if (
-    (flow.documentProgress?.totalRequired !== undefined || flow.documentProgress?.totalUploaded !== undefined) &&
-    flow.hasGuarantor !== false &&
-    flow.hasCollateral !== false
-  ) {
-    const added = flow.documentProgress.totalUploaded ?? 0;
-    const total = flow.documentProgress.totalRequired ?? visibleSolicitudDocuments(flow).length;
-    return { added, pending: Math.max(total - added, 0) };
-  }
-  const documents = visibleSolicitudDocuments(flow);
-  const added = documents.filter((document) => {
-    if (document.applicationType === "ine_titular" || document.applicationType === "ine_representante_legal") {
-      return Boolean(flow.ineFront && flow.ineBack);
-    }
-    return document.status !== "missing";
-  }).length;
-  return { added, pending: documents.length - added };
+  const requiredDocuments = visibleSolicitudDocuments(flow).filter((document) => !document.optional);
+  const added = requiredDocuments.filter((document) => document.status !== "missing").length;
+  return { added, pending: requiredDocuments.length - added };
 }
 
 function FilePreview({ file }: { file?: StoredFile }) {
@@ -555,6 +535,7 @@ export function SolicitudFlowPage() {
   const [zipLoading, setZipLoading] = useState(false);
   const [lastZipLookup, setLastZipLookup] = useState("");
   const [showLandingHelp, setShowLandingHelp] = useState(false);
+  const [previewFile, setPreviewFile] = useState<StoredFile | null>(null);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -1289,7 +1270,7 @@ export function SolicitudFlowPage() {
                   size="sm"
                   type="button"
                   variant="outline"
-                  onClick={() => openStoredFile(document.file)}
+                  onClick={() => setPreviewFile(document.file ?? null)}
                 >
                   Ver archivo
                 </Button>
@@ -1326,6 +1307,8 @@ export function SolicitudFlowPage() {
     };
     const renderIneCard = (document: SolicitudDocument) => {
       const hasIne = document.status === "uploaded" || Boolean(flow.ineFront && flow.ineBack);
+      const backendKey = document.backendKey?.toLowerCase() ?? "";
+      const inePreviewFile = backendKey.includes("reverso") ? flow.ineBack : flow.ineFront;
       const canChangeIne = Boolean(flow.ineFront || flow.ineBack) && !document.backendDocumentId;
 
       return (
@@ -1353,13 +1336,13 @@ export function SolicitudFlowPage() {
               )}
             </div>
             <div className="flex flex-wrap gap-2 sm:justify-end">
-              {hasIne && flow.ineFront && (
+              {hasIne && inePreviewFile?.previewUrl && (
                 <Button
                   icon={<Eye className="h-4 w-4" />}
                   size="sm"
                   type="button"
                   variant="outline"
-                  onClick={() => openStoredFile(flow.ineFront)}
+                  onClick={() => setPreviewFile(inePreviewFile)}
                 >
                   Ver archivo
                 </Button>
@@ -1437,6 +1420,7 @@ export function SolicitudFlowPage() {
             </Button>
             <Button
               icon={<ArrowRight className="h-4 w-4" />}
+              disabled={hasMissing}
               loading={saving}
               size="lg"
               type="button"
@@ -1453,50 +1437,88 @@ export function SolicitudFlowPage() {
         </div>
         {hasMissing && (
           <div className="mb-5 rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            Puedes continuar, pero es posible que un asesor te pida completar algunos documentos después.
+            Agrega los documentos requeridos para continuar.
           </div>
         )}
-        <div className="grid gap-5">
-          {renderSection(
-            "Documentos del titular",
-            "Agrega los documentos principales para revisar tu solicitud.",
-            holderDocuments,
+        <>
+          <div className="grid gap-5">
+            {renderSection(
+              "Documentos del titular",
+              "Agrega los documentos principales para revisar tu solicitud.",
+              holderDocuments,
+            )}
+            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-950">Aval</h2>
+              </div>
+              <div className="rounded-[8px] bg-white p-4">
+                <p className="mb-3 font-bold text-slate-950">¿Tu solicitud contará con aval?</p>
+                {renderChoice(flow.hasGuarantor, (value) =>
+                  runAction(() => setGuarantorChoice(flow.flowId, value)),
+                )}
+                {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
+                {flow.hasGuarantor === false && (
+                  <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                    Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
+                  </p>
+                )}
+              </div>
+            </section>
+            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold text-slate-950">Garantía</h2>
+              </div>
+              <div className="rounded-[8px] bg-white p-4">
+                <p className="mb-3 font-bold text-slate-950">¿Cuentas con una garantía para esta solicitud?</p>
+                {renderChoice(flow.hasCollateral, (value) =>
+                  runAction(() => setCollateralChoice(flow.flowId, value)),
+                )}
+                {flow.hasCollateral === true && <div className="mt-4 grid gap-3">{guaranteeDocuments.map(renderDocumentCard)}</div>}
+                {flow.hasCollateral === false && (
+                  <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
+                    Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
+                  </p>
+                )}
+              </div>
+            </section>
+          </div>
+          {previewFile && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+              <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-[14px] bg-white shadow-2xl">
+                <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-base font-bold text-slate-950">{previewFile.name}</h2>
+                    <p className="text-xs text-slate-500">Vista previa del archivo cargado</p>
+                  </div>
+                  <Button size="sm" type="button" variant="ghost" onClick={() => setPreviewFile(null)}>
+                    Cerrar
+                  </Button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4">
+                  {isImageFile(previewFile) && (
+                    <img
+                      alt={previewFile.name}
+                      className="mx-auto max-h-[72vh] max-w-full rounded-[8px] object-contain"
+                      src={previewFile.previewUrl}
+                    />
+                  )}
+                  {!isImageFile(previewFile) && previewFile.previewUrl && (
+                    <iframe
+                      className="h-[72vh] w-full rounded-[8px] border border-slate-200 bg-white"
+                      src={previewFile.previewUrl}
+                      title={previewFile.name}
+                    />
+                  )}
+                  {!previewFile.previewUrl && (
+                    <div className="rounded-[8px] bg-white p-6 text-center text-sm text-slate-600">
+                      No hay vista previa disponible para este archivo.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
-          <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-slate-950">Aval</h2>
-            </div>
-            <div className="rounded-[8px] bg-white p-4">
-              <p className="mb-3 font-bold text-slate-950">¿Tu solicitud contará con aval?</p>
-              {renderChoice(flow.hasGuarantor, (value) =>
-                runAction(() => setGuarantorChoice(flow.flowId, value)),
-              )}
-              {flow.hasGuarantor === true && <div className="mt-4 grid gap-3">{guarantorDocuments.map(renderDocumentCard)}</div>}
-              {flow.hasGuarantor === false && (
-                <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
-                  Puedes continuar. Si se requiere aval, un asesor te lo solicitará más adelante.
-                </p>
-              )}
-            </div>
-          </section>
-          <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-4">
-              <h2 className="text-lg font-bold text-slate-950">Garantía</h2>
-            </div>
-            <div className="rounded-[8px] bg-white p-4">
-              <p className="mb-3 font-bold text-slate-950">¿Cuentas con una garantía para esta solicitud?</p>
-              {renderChoice(flow.hasCollateral, (value) =>
-                runAction(() => setCollateralChoice(flow.flowId, value)),
-              )}
-              {flow.hasCollateral === true && <div className="mt-4 grid gap-3">{guaranteeDocuments.map(renderDocumentCard)}</div>}
-              {flow.hasCollateral === false && (
-                <p className="mt-4 rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-600">
-                  Puedes continuar. Si se requiere garantía, un asesor te lo indicará.
-                </p>
-              )}
-            </div>
-          </section>
-        </div>
+        </>
       </QuestionScreen>
     );
   }
@@ -1533,7 +1555,7 @@ export function SolicitudFlowPage() {
         if (nextFlow.phoneVerification.codeVerified) {
           setOtpSuccessMessage("Celular verificado correctamente.");
         } else {
-          setError("El código no coincide. Revisa los dígitos e inténtalo de nuevo.");
+          setError(nextFlow.phoneVerification.lastError ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.");
         }
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : "No pudimos confirmar el código.");

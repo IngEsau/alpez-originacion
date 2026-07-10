@@ -81,6 +81,10 @@ function isTechnicalError(error: unknown): boolean {
   if (error instanceof ApiRequestError) {
     return error.status === 0 || error.status >= 500;
   }
+  if (error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number") {
+    const status = (error as { status: number }).status;
+    return status === 0 || status >= 500;
+  }
   return true;
 }
 
@@ -215,7 +219,7 @@ export interface MappedRequiredDocumentsResponse {
   holderDocuments: SolicitudDocument[];
   avalDocuments: SolicitudDocument[];
   guaranteeDocuments: SolicitudDocument[];
-  progress?: LoadedRequiredDocumentsResult["progress"];
+  backendProgress?: LoadedRequiredDocumentsResult["progress"];
 }
 
 export function mapBackendDocument(document: BackendRequiredDocument, group: "solicitante" | "aval" | "garantia"): SolicitudDocument {
@@ -254,7 +258,7 @@ export function mapRequiredDocumentsResponse(result: RequiredDocumentsResult): M
     holderDocuments: result.solicitante.map((document) => mapBackendDocument(document, "solicitante")),
     avalDocuments: (result.aval ?? []).map((document) => mapBackendDocument(document, "aval")),
     guaranteeDocuments: (result.garantia ?? []).map((document) => mapBackendDocument(document, "garantia")),
-    progress,
+    backendProgress: progress,
   };
 }
 
@@ -266,7 +270,7 @@ export function mapRequiredDocumentsResult(result: RequiredDocumentsResult): Loa
       ...mapped.avalDocuments,
       ...mapped.guaranteeDocuments,
     ],
-    progress: mapped.progress,
+    progress: mapped.backendProgress,
   };
 }
 

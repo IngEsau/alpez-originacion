@@ -90,6 +90,30 @@ describe("onboarding api configuration", () => {
 
     expect(fallback).not.toHaveBeenCalled();
   });
+
+  it("does not fallback to mock for ApiRequestError-like business validation errors", async () => {
+    const fallback = vi.fn(async () => "mock");
+
+    await expect(
+      resolveApiOrMock({
+        useRealApi: true,
+        fallbackToMock: true,
+        operation: "validateSms",
+        apiCall: async () => {
+          throw {
+            status: 422,
+            body: {
+              success: false,
+              data: { valid: false },
+            },
+          };
+        },
+        fallback,
+      }),
+    ).rejects.toThrow("No pudimos confirmar el código. Intenta nuevamente.");
+
+    expect(fallback).not.toHaveBeenCalled();
+  });
 });
 
 describe("mapBackendDocumentsToSolicitudDocuments", () => {
@@ -188,7 +212,39 @@ describe("mapBackendDocumentsToSolicitudDocuments", () => {
       }),
     ]);
     expect(result.guaranteeDocuments).toEqual([]);
-    expect(result.progress).toEqual({
+    expect(result.backendProgress).toEqual({
+      totalRequired: 7,
+      totalUploaded: 2,
+      completed: false,
+    });
+  });
+
+  it("keeps conditional backend documents separated from holder documents", () => {
+    const result = mapRequiredDocumentsResponse({
+      solicitante: [
+        { id: 3, clave: "COMPROBANTE_DOMICILIO", nombre: "Comprobante de domicilio del solicitante", condicionado_a: "NINGUNO", requerido: 1, cargado: false },
+        { id: 1, clave: "INE_FRONTAL", nombre: "INE Frontal del solicitante", condicionado_a: "NINGUNO", requerido: 1, cargado: true },
+        { id: 2, clave: "INE_REVERSO", nombre: "INE Reverso del solicitante", condicionado_a: "NINGUNO", requerido: 1, cargado: true },
+      ],
+      aval: [
+        { id: 6, clave: "COMPROBANTE_DOMICILIO_AVAL", nombre: "Comprobante de domicilio del aval", condicionado_a: "AVAL", requerido: 1, cargado: false },
+      ],
+      garantia: [
+        { id: 7, clave: "DOCUMENTO_GARANTIA", nombre: "Documento que acredita la garantia", condicionado_a: "GARANTIA", requerido: 1, cargado: false },
+      ],
+      progreso: {
+        total_requeridos: 7,
+        total_cargados: 2,
+        completado: false,
+      },
+    });
+
+    expect(result.holderDocuments).toHaveLength(3);
+    expect(result.holderDocuments.filter((document) => document.status !== "missing")).toHaveLength(2);
+    expect(result.holderDocuments.filter((document) => document.status === "missing")).toHaveLength(1);
+    expect(result.avalDocuments).toHaveLength(1);
+    expect(result.guaranteeDocuments).toHaveLength(1);
+    expect(result.backendProgress).toEqual({
       totalRequired: 7,
       totalUploaded: 2,
       completed: false,

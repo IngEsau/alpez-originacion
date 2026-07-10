@@ -83,8 +83,17 @@ export function sendSms(payload: SendSmsPayload): Promise<SendSmsResult> {
 }
 
 function smsValidationFromBusinessError(error: unknown): ValidateSmsResult | null {
-  if (!(error instanceof ApiRequestError) || error.status !== 422) return null;
-  const body = error.body;
+  const status = error instanceof ApiRequestError
+    ? error.status
+    : error && typeof error === "object" && typeof (error as { status?: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : null;
+  if (status !== 422) return null;
+  const body = error instanceof ApiRequestError
+    ? error.body
+    : error && typeof error === "object"
+      ? (error as { body?: unknown }).body
+      : undefined;
   const envelope = body && typeof body === "object" ? body as Partial<ApiEnvelope<ValidateSmsResult>> : null;
   const data = envelope?.data && typeof envelope.data === "object" ? envelope.data : undefined;
   return {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSolicitudFlow, saveFiscalIdentity } from "./solicitudFlowService";
+import { createSolicitudFlow, isSmsVerificationApproved, saveFiscalIdentity } from "./solicitudFlowService";
 
 function stubBrowserStorage() {
   const store = new Map<string, string>();
@@ -38,5 +38,15 @@ describe("solicitudFlowService fiscal identity step", () => {
     expect(updated.fiscalIdentity.confirmed).toBe(true);
     expect(updated.basicData.rfc).toBe("GAGE950615GT1");
     expect(updated.basicData.curp).toBe("GAGE950615HPLNYR01");
+  });
+});
+
+describe("solicitudFlowService SMS validation", () => {
+  it("only approves the SMS validation when backend valid is boolean true", () => {
+    expect(isSmsVerificationApproved({ valid: true })).toBe(true);
+    expect(isSmsVerificationApproved({ valid: false })).toBe(false);
+    expect(isSmsVerificationApproved({ valid: "true" })).toBe(false);
+    expect(isSmsVerificationApproved({ valid: "false" })).toBe(false);
+    expect(isSmsVerificationApproved({ valid: undefined })).toBe(false);
   });
 });

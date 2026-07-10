@@ -36,4 +36,22 @@ describe("validateSms", () => {
       message: "El código de verificación no es correcto",
     });
   });
+
+  it("handles 422 business validation even when the error is ApiRequestError-like", async () => {
+    vi.mocked(apiRequest).mockRejectedValueOnce({
+      status: 422,
+      body: {
+        code: 422,
+        success: false,
+        trace_id: "trace-1",
+        mensaje: "El código de verificación no es correcto",
+        data: { valid: false },
+      },
+    });
+
+    await expect(validateSms({ trace_id: "trace-1", codigo: "123456" })).resolves.toEqual({
+      valid: false,
+      message: "El código de verificación no es correcto",
+    });
+  });
 });
