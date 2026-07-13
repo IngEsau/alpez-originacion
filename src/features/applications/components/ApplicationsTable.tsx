@@ -20,7 +20,7 @@ export function ApplicationsTable({ applications }: { applications: Application[
             <th className="px-4 py-3">Folio</th>
             <th className="px-4 py-3">Cliente / Prospecto</th>
             <th className="px-4 py-3">Tipo persona</th>
-            <th className="px-4 py-3">Escenario</th>
+            <th className="px-4 py-3">Perfil</th>
             <th className="px-4 py-3">Estado</th>
             <th className="px-4 py-3">Decisión</th>
             <th className="px-4 py-3">Score</th>

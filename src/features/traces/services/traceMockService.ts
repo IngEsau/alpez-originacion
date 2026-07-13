@@ -11,6 +11,7 @@ import type {
 import { TRACES_MOCK } from "../../../mocks/traces.mock";
 import { createId } from "../../../shared/lib/ids";
 import { wait } from "../../../shared/lib/mockDelay";
+import { productizeStoredCopy } from "../../../shared/lib/productCopy";
 
 const STORAGE_KEY = "alpez_traces";
 
@@ -32,7 +33,14 @@ function readStore(): Trace[] {
   }
 
   try {
-    return JSON.parse(saved) as Trace[];
+    return (JSON.parse(saved) as Trace[]).map((trace) => ({
+      ...trace,
+      events: trace.events.map((event) => ({
+        ...event,
+        title: productizeStoredCopy(event.title),
+        description: productizeStoredCopy(event.description),
+      })),
+    }));
   } catch {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(TRACES_MOCK));
     return cloneTraces(TRACES_MOCK);
@@ -145,7 +153,7 @@ export async function updateTraceIneUpload(
   trace_id: string,
   side: "front" | "back",
 ): Promise<Trace> {
-  const title = side === "front" ? "Carga frontal INE simulada" : "Carga reverso INE simulada";
+  const title = side === "front" ? "Carga frontal INE" : "Carga reverso INE";
   const description = side === "front" ? "Archivo frontal_ine.jpg cargado." : "Archivo reverso_ine.jpg cargado.";
   const trace = await getTraceById(trace_id);
   if (!trace) throw new Error("Traza no encontrada.");

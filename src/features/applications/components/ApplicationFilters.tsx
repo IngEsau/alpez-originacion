@@ -78,7 +78,7 @@ export function ApplicationFilters({ filters, onChange }: { filters: Filters; on
         onChange={(event) => onChange({ ...filters, decision: event.target.value as Filters["decision"] })}
       />
       <Select
-        label="Escenario"
+        label="Perfil"
         options={scenarioOptions.map((value) => ({
           value,
           label: value === "todos" ? "Todos" : fullScenarioLabels[value],

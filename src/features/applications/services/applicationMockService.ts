@@ -13,6 +13,7 @@ import { APPLICATION_STATUS_ORDER, VALIDATION_LABELS, VALIDATION_TYPES } from ".
 import { createDocumentsForApplication } from "../../../mocks/documents.mock";
 import { createFolio, createId } from "../../../shared/lib/ids";
 import { wait } from "../../../shared/lib/mockDelay";
+import { productizeStoredCopy } from "../../../shared/lib/productCopy";
 import { getTracesStoreSnapshot } from "../../traces/services/traceMockService";
 
 const STORAGE_KEY = "alpez_applications";
@@ -25,6 +26,55 @@ function canUseLocalStorage(): boolean {
   return typeof window !== "undefined" && Boolean(window.localStorage);
 }
 
+function normalizeStoredCopy(application: Application): Application {
+  const clean = productizeStoredCopy;
+  const cleanOptional = (value?: string) => value ? clean(value) : value;
+  return {
+    ...application,
+    applicantName: clean(application.applicantName),
+    executiveName: clean(application.executiveName),
+    physicalPerson: application.physicalPerson
+      ? {
+          ...application.physicalPerson,
+          firstName: clean(application.physicalPerson.firstName),
+          lastName: clean(application.physicalPerson.lastName),
+          email: clean(application.physicalPerson.email),
+        }
+      : undefined,
+    moralPerson: application.moralPerson
+      ? {
+          ...application.moralPerson,
+          legalName: clean(application.moralPerson.legalName),
+          commercialName: cleanOptional(application.moralPerson.commercialName),
+        }
+      : undefined,
+    legalRepresentative: application.legalRepresentative
+      ? {
+          ...application.legalRepresentative,
+          fullName: clean(application.legalRepresentative.fullName),
+          email: clean(application.legalRepresentative.email),
+        }
+      : undefined,
+    guarantor: application.guarantor
+      ? {
+          ...application.guarantor,
+          fullName: clean(application.guarantor.fullName),
+          email: cleanOptional(application.guarantor.email),
+        }
+      : undefined,
+    timeline: application.timeline.map((event) => ({
+      ...event,
+      title: clean(event.title),
+      description: event.description ? clean(event.description) : event.description,
+      actor: clean(event.actor),
+    })),
+    validations: application.validations.map((validation) => ({
+      ...validation,
+      detail: validation.detail ? clean(validation.detail) : validation.detail,
+    })),
+  };
+}
+
 function readStore(): Application[] {
   if (!canUseLocalStorage()) return cloneApplications(APPLICATIONS_MOCK);
 
@@ -35,7 +85,7 @@ function readStore(): Application[] {
   }
 
   try {
-    return (JSON.parse(saved) as Application[]).map((application, index) => ({
+    return (JSON.parse(saved) as Application[]).map((application, index) => normalizeStoredCopy({
       ...application,
       trace_id: application.trace_id ?? `TRC-LEGACY-${String(index + 1).padStart(4, "0")}`,
     }));
@@ -155,7 +205,7 @@ function getApplicantName(payload: CreateApplicationPayload): string {
       .join(" ");
   }
 
-  return payload.moralPerson?.legalName ?? "Prospecto demo";
+  return payload.moralPerson?.legalName ?? "Prospecto ALPEZ";
 }
 
 function getApplicantRfc(payload: CreateApplicationPayload): string | undefined {
@@ -205,7 +255,7 @@ export async function createApplication(payload: CreateApplicationPayload): Prom
         applicationId: id,
         status: "captura_datos",
         title: "Solicitud creada",
-        description: "Captura inicial completada desde el wizard demo.",
+        description: "Captura inicial completada desde el formulario de originación.",
         actor: payload.executiveName,
         createdAt,
       },
@@ -247,7 +297,7 @@ export async function updateApplicationStatus(id: string, status: ApplicationSta
       status,
       title: "Estado actualizado",
       description: `La solicitud cambió a ${status}.`,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   return replaceApplicationInStore(updated);

@@ -58,7 +58,7 @@ export async function runIneValidation(applicationId: string): Promise<IneValida
       status,
       title: "Validación INE ejecutada",
       description: result.message,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(updated);
@@ -83,7 +83,7 @@ export async function runKnockoutValidation(applicationId: string): Promise<Knoc
       status: result.passed ? application.status : "rechazada",
       title: "Knockouts ejecutados",
       description: result.passed ? "Sin reglas eliminatorias detectadas." : result.reasons.join(", "),
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(result.passed ? updated : { ...updated, status: "rechazada", decision: "rechazada" });
@@ -109,7 +109,7 @@ export async function runExistingClientValidation(applicationId: string): Promis
       status: exists ? "rechazada" : application.status,
       title: "Cliente existente validado",
       description: result.message,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(exists ? { ...updated, status: "rechazada", decision: "rechazada" } : updated);
@@ -123,17 +123,17 @@ export async function sendSmsCode(applicationId: string): Promise<{ code: string
     updateValidationInApplication({ ...application, status: "sms_pendiente" }, "sms", {
       status: "procesando",
       result: "Código enviado",
-      detail: "Código demo: 123456",
+      detail: "Código de verificación generado.",
     }),
     {
       status: "sms_pendiente",
       title: "SMS enviado",
-      description: "Código demo generado: 123456",
-      actor: "Sistema Demo",
+      description: "Código de verificación generado.",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(updated);
-  return { code: "123456", message: "Código SMS demo enviado." };
+  return { code: "123456", message: "Código SMS enviado." };
 }
 
 export async function verifySmsCode(applicationId: string, code: string): Promise<{ valid: boolean; message: string }> {
@@ -144,13 +144,13 @@ export async function verifySmsCode(applicationId: string, code: string): Promis
     updateValidationInApplication({ ...application, status: valid ? "consulta_buro" : application.status }, "sms", {
       status: valid ? "aprobado" : "observado",
       result: valid ? "Código validado" : "Código incorrecto",
-      detail: valid ? "Validación SMS aprobada." : "El código capturado no coincide con el código demo.",
+      detail: valid ? "Validación SMS aprobada." : "El código capturado no coincide.",
     }),
     {
       status: valid ? "consulta_buro" : application.status,
       title: "SMS validado",
       description: valid ? "Código validado correctamente." : "Código incorrecto.",
-      actor: "Ejecutivo Demo",
+      actor: "Ejecutivo ALPEZ",
     },
   );
   replaceApplicationInStore(updated);
@@ -189,7 +189,7 @@ export async function runBureauQuery(applicationId: string): Promise<BureauResul
       status: hasHit ? "validacion_listas" : "modelo_decision",
       title: "Consulta Buró ejecutada",
       description: result.message,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(updated);
@@ -225,7 +225,7 @@ export async function runListsValidation(applicationId: string): Promise<ListsVa
       status: failed ? "rechazada" : "modelo_decision",
       title: "Listas validadas",
       description: result.message,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(updated);
@@ -310,7 +310,7 @@ export async function runDecisionModel(applicationId: string): Promise<CreditDec
       status: decision.status,
       title: "Modelo de decisión ejecutado",
       description: decision.message,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
     },
   );
   replaceApplicationInStore(updated);

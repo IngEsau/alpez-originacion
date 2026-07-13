@@ -8,15 +8,15 @@ import { destroyDemoSession, getDemoSession } from "../shared/lib/session";
 const navItems = [
   { label: "Dashboard", to: "/dashboard", icon: LayoutDashboard },
   { label: "Solicitudes", to: "/solicitudes", icon: ClipboardCheck },
-  { label: "Trazas", to: "/trazas", icon: GitBranch },
+  { label: "Seguimientos", to: "/trazas", icon: GitBranch },
 ];
 
 const pageTitles: Array<{ match: (pathname: string) => boolean; title: string }> = [
   { match: (pathname) => pathname === "/dashboard", title: "Dashboard operativo" },
   { match: (pathname) => pathname === "/solicitudes", title: "Solicitudes" },
   { match: (pathname) => pathname.startsWith("/solicitudes/"), title: "Detalle de solicitud" },
-  { match: (pathname) => pathname === "/trazas", title: "Trazas" },
-  { match: (pathname) => pathname.startsWith("/trazas/"), title: "Detalle de traza" },
+  { match: (pathname) => pathname === "/trazas", title: "Seguimientos" },
+  { match: (pathname) => pathname.startsWith("/trazas/"), title: "Detalle de seguimiento" },
 ];
 
 export function DashboardLayout() {
@@ -62,7 +62,7 @@ export function DashboardLayout() {
               );
             })}
           </nav>
-          <div className="space-y-3 border-t border-slate-200 p-4">
+          <div className="border-t border-slate-200 p-4">
             <Button
               className="w-full"
               icon={<Play className="h-4 w-4" />}
@@ -72,10 +72,6 @@ export function DashboardLayout() {
             >
               Iniciar originación
             </Button>
-            <div className="rounded-xl bg-slate-50 p-3">
-              <p className="text-xs font-semibold text-slate-500">Ambiente</p>
-              <p className="text-sm font-bold text-slate-950">Demo local</p>
-            </div>
           </div>
         </div>
       </aside>
@@ -88,7 +84,7 @@ export function DashboardLayout() {
             </button>
             <div>
               <p className="text-sm font-bold text-slate-950">{title}</p>
-              <p className="hidden text-xs text-slate-500 sm:block">Monitoreo operativo | Ambiente Demo</p>
+              <p className="hidden text-xs text-slate-500 sm:block">Monitoreo y seguimiento operativo</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -103,7 +99,7 @@ export function DashboardLayout() {
               Iniciar originación
             </Button>
             <div className="hidden text-right md:block">
-              <p className="text-sm font-semibold text-slate-950">{user?.name ?? "Ejecutivo Demo"}</p>
+              <p className="text-sm font-semibold text-slate-950">{user?.name ?? "Ejecutivo ALPEZ"}</p>
               <p className="text-xs text-slate-500">Administrador</p>
             </div>
             <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100" type="button" onClick={logout}>

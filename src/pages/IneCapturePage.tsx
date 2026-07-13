@@ -75,8 +75,8 @@ export function IneCapturePage() {
   if (!trace) {
     return (
       <EmptyState
-        title="Traza no encontrada"
-        description="El trace_id solicitado no existe en el store demo."
+        title="Seguimiento no encontrado"
+        description="El proceso solicitado no está disponible."
         action={<Button onClick={() => navigate("/solicitud")}>Iniciar originación</Button>}
       />
     );
@@ -90,7 +90,7 @@ export function IneCapturePage() {
     <>
       <PageHeader
         title="Carga de INE"
-        description={`Trace ID: ${trace.trace_id}`}
+        description="Carga y validación de la identificación"
         actions={<TraceStatusBadge status={trace.status} />}
       />
 
@@ -110,13 +110,13 @@ export function IneCapturePage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <Card title="Upload simulado" description="No usa OCR real ni servicios externos">
+        <Card title="Archivos de identificación" description="Agrega el frente y reverso de la INE">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 p-4">
               <FileImage className="mb-3 h-5 w-5 text-[#0F4C81]" />
               <p className="font-semibold text-slate-950">Frente INE</p>
               <p className="mt-1 text-sm text-slate-500">
-                {trace.ine_front_loaded ? "Archivo cargado: frontal_ine.jpg" : "Simula la foto o carga frontal."}
+                {trace.ine_front_loaded ? "Archivo cargado: frontal_ine.jpg" : "Agrega la imagen frontal."}
               </p>
               <Button
                 className="mt-4"
@@ -127,14 +127,14 @@ export function IneCapturePage() {
                 variant="secondary"
                 onClick={() => runAction(() => updateTraceIneUpload(trace.trace_id, "front"))}
               >
-                Simular carga frontal
+                Cargar frente
               </Button>
             </div>
             <div className="rounded-2xl border border-slate-200 p-4">
               <FileImage className="mb-3 h-5 w-5 text-[#0F4C81]" />
               <p className="font-semibold text-slate-950">Reverso INE</p>
               <p className="mt-1 text-sm text-slate-500">
-                {trace.ine_back_loaded ? "Archivo cargado: reverso_ine.jpg" : "Simula la foto o carga del reverso."}
+                {trace.ine_back_loaded ? "Archivo cargado: reverso_ine.jpg" : "Agrega la imagen del reverso."}
               </p>
               <Button
                 className="mt-4"
@@ -145,13 +145,13 @@ export function IneCapturePage() {
                 variant="secondary"
                 onClick={() => runAction(() => updateTraceIneUpload(trace.trace_id, "back"))}
               >
-                Simular carga reverso
+                Cargar reverso
               </Button>
             </div>
           </div>
         </Card>
 
-        <Card title="Validación simulada de INE" description="Calidad, vigencia y padrón">
+        <Card title="Validación de INE" description="Calidad, vigencia y consulta de padrón">
           <div className="space-y-3">
             <Button
               disabled={!ineReady || flowBlocked || ineApproved}
@@ -164,18 +164,18 @@ export function IneCapturePage() {
             </Button>
             {ineApproved && (
               <Button type="button" variant="outline" onClick={() => navigate(`/originacion/${trace.trace_id}`)}>
-                Continuar a knockouts
+                Continuar a validaciones
               </Button>
             )}
             <p className="text-sm text-slate-500">
-              Si la validación falla, el flujo se detiene y queda visible en la traza.
+              El resultado quedará registrado en el seguimiento de la solicitud.
             </p>
           </div>
         </Card>
       </div>
 
       <div className="mt-5">
-        <TraceTimeline events={trace.events.slice(-6)} title="Eventos recientes de la traza" />
+        <TraceTimeline events={trace.events.slice(-6)} title="Eventos recientes" />
       </div>
     </>
   );

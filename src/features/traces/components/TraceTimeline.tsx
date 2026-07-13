@@ -3,9 +3,9 @@ import { TraceEventStatusBadge } from "../../../shared/components/Badge";
 import { Card } from "../../../shared/components/Card";
 import { formatDateTime, traceStepLabels } from "../../../shared/lib/formatters";
 
-export function TraceTimeline({ events, title = "Timeline de traza" }: { events: TraceEvent[]; title?: string }) {
+export function TraceTimeline({ events, title = "Historial de seguimiento" }: { events: TraceEvent[]; title?: string }) {
   return (
-    <Card title={title} description="Eventos técnicos y operativos registrados por trace_id">
+    <Card title={title} description="Eventos operativos registrados durante el proceso">
       <div className="space-y-4">
         {events.map((event, index) => (
           <div key={event.id} className="flex gap-3">

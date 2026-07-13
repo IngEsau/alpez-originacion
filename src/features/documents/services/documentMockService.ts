@@ -118,7 +118,7 @@ export async function simulateDocumentUpload(
       status: nextStatus,
       title: "Documento cargado",
       description: updatedDocument.label,
-      actor: "Ejecutivo Demo",
+      actor: "Ejecutivo ALPEZ",
     },
   );
   replaceApplicationInStore(updatedApplication);
@@ -190,7 +190,7 @@ export async function updateDocumentStatus(
       status: nextStatus,
       title: "Estado documental actualizado",
       description: `${updatedDocument.label}: ${status}`,
-      actor: "Analista Demo",
+      actor: "Analista ALPEZ",
     },
   );
   replaceApplicationInStore(updatedApplication);

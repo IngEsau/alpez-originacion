@@ -210,7 +210,7 @@ export function evaluateMoralPersonNoHitBuro(application: Application): CreditDe
   const finalScore = application.finalScore ?? calculateNoHitFinalScore(application);
   if (finalScore < 65) {
     return {
-      ...rejected(application, "modelo_decision_rechazado", "Solicitud rechazada por modelo de decisión simulado."),
+      ...rejected(application, "modelo_decision_rechazado", "Solicitud rechazada por el modelo de decisión."),
       finalScore,
       bureauScore: null,
     };

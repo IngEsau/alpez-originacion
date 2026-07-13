@@ -38,18 +38,20 @@ export function TraceDetailPage() {
   if (!trace) {
     return (
       <EmptyState
-        title="Traza no encontrada"
-        description="El trace_id solicitado no existe en el store demo."
-        action={<Button onClick={() => navigate("/trazas")}>Volver a trazas</Button>}
+        title="Seguimiento no encontrado"
+        description="El seguimiento solicitado no está disponible."
+        action={<Button onClick={() => navigate("/trazas")}>Volver a seguimientos</Button>}
       />
     );
   }
 
+  const showDeveloperDetails = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === "true";
+
   return (
     <>
       <PageHeader
-        title={trace.trace_id}
-        description="Detalle técnico/operativo de la traza"
+        title="Seguimiento operativo"
+        description="Historial y estado del proceso de originación"
         actions={
           <>
             {trace.application_id && (
@@ -58,7 +60,7 @@ export function TraceDetailPage() {
               </Button>
             )}
             <Button type="button" variant="outline" onClick={() => navigate("/trazas")}>
-              Volver a trazas
+              Volver a seguimientos
             </Button>
           </>
         }
@@ -86,27 +88,31 @@ export function TraceDetailPage() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <Card title="Resultado INE" description="Metadata de calidad, vigencia y padrón">
+        <Card title="Resultado INE" description="Calidad, vigencia y consulta de padrón">
           {ineResult ? (
             <div className="space-y-3">
               <TraceEventStatusBadge status={ineResult.status} />
               <p className="text-sm text-slate-600">{ineResult.description}</p>
-              <pre className="overflow-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-50">
-                {JSON.stringify(ineResult.metadata, null, 2)}
-              </pre>
+              {showDeveloperDetails && (
+                <pre className="overflow-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-50">
+                  {JSON.stringify(ineResult.metadata, null, 2)}
+                </pre>
+              )}
             </div>
           ) : (
             <p className="text-sm text-slate-500">Sin resultado INE registrado.</p>
           )}
         </Card>
-        <Card title="Resultado knockouts" description="Metadata de reglas eliminatorias">
+        <Card title="Validaciones iniciales" description="Resultado de las reglas de elegibilidad">
           {knockoutResult ? (
             <div className="space-y-3">
               <TraceEventStatusBadge status={knockoutResult.status} />
               <p className="text-sm text-slate-600">{knockoutResult.description}</p>
-              <pre className="overflow-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-50">
-                {JSON.stringify(knockoutResult.metadata, null, 2)}
-              </pre>
+              {showDeveloperDetails && (
+                <pre className="overflow-auto rounded-xl bg-slate-950 p-3 text-xs text-slate-50">
+                  {JSON.stringify(knockoutResult.metadata, null, 2)}
+                </pre>
+              )}
             </div>
           ) : (
             <p className="text-sm text-slate-500">Sin resultado knockouts registrado.</p>
@@ -115,7 +121,7 @@ export function TraceDetailPage() {
       </div>
 
       <div className="mt-5">
-        <TraceTimeline events={trace.events} title="Eventos completos" />
+        <TraceTimeline events={trace.events} title="Historial completo" />
       </div>
       <p className="mt-4 text-xs text-slate-500">
         Creada {formatDateTime(trace.created_at)} · Actualizada {formatDateTime(trace.updated_at)}

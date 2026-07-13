@@ -1,4 +1,5 @@
 const DEFAULT_API_BASE_URL = "";
+const inFlightPostRequests = new Map<string, Promise<unknown>>();
 
 export class ApiRequestError extends Error {
   status: number;
@@ -46,7 +47,13 @@ function messageFromBody(body: unknown): string {
   return "Request failed.";
 }
 
-export async function apiRequest<T>(
+function requestKey(url: string, options: RequestInit): string | null {
+  const method = (options.method ?? "GET").toUpperCase();
+  if (method !== "POST" || (options.body !== undefined && typeof options.body !== "string")) return null;
+  return `${method}:${url}:${options.body ?? ""}`;
+}
+
+export function apiRequest<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
@@ -55,15 +62,31 @@ export async function apiRequest<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(buildApiUrl(path), {
-    ...options,
-    headers,
+  const url = buildApiUrl(path);
+  const key = requestKey(url, options);
+  const existingRequest = key ? inFlightPostRequests.get(key) : undefined;
+  if (existingRequest) return existingRequest as Promise<T>;
+
+  const execute = async (): Promise<T> => {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+    const body = await parseResponseBody(response);
+
+    if (!response.ok) {
+      throw new ApiRequestError(response.status, messageFromBody(body), body);
+    }
+
+    return body as T;
+  };
+
+  if (!key) return execute();
+
+  let request: Promise<T>;
+  request = execute().finally(() => {
+    if (inFlightPostRequests.get(key) === request) inFlightPostRequests.delete(key);
   });
-  const body = await parseResponseBody(response);
-
-  if (!response.ok) {
-    throw new ApiRequestError(response.status, messageFromBody(body), body);
-  }
-
-  return body as T;
+  inFlightPostRequests.set(key, request);
+  return request;
 }

@@ -74,7 +74,7 @@ export function OriginacionFlowPage() {
   const [running, setRunning] = useState(false);
   const [busyDocumentId, setBusyDocumentId] = useState<string | null>(null);
   const [scenario, setScenario] = useState<ApplicationScenario>("persona_fisica_hit_buro");
-  const [name, setName] = useState("Prospecto Originación Demo");
+  const [name, setName] = useState("Prospecto ALPEZ");
   const [amount, setAmount] = useState("50000");
 
   async function load() {
@@ -140,10 +140,10 @@ export function OriginacionFlowPage() {
             personType: "fisica",
             scenario,
             requestedAmount,
-            executiveName: "Ejecutivo Demo",
+            executiveName: "Ejecutivo ALPEZ",
             physicalPerson: {
               firstName: name.split(" ")[0] ?? "Prospecto",
-              lastName: name.split(" ")[1] ?? "Demo",
+              lastName: name.split(" ")[1] ?? "Solicitante",
               rfc: "ORPF900101A11",
               curp: "ORPF900101HPLRGN09",
               birthDate: "1990-01-01",
@@ -175,7 +175,7 @@ export function OriginacionFlowPage() {
             personType: "moral",
             scenario,
             requestedAmount,
-            executiveName: "Ejecutivo Demo",
+            executiveName: "Ejecutivo ALPEZ",
             moralPerson: {
               legalName: name,
               commercialName: name,
@@ -202,7 +202,7 @@ export function OriginacionFlowPage() {
               bankAccountSeniorityMonths: 30,
             },
             legalRepresentative: {
-              fullName: "Representante Originación Demo",
+              fullName: "Representante legal",
               rfc: "ROLD870930Q81",
               curp: "ROLD870930MPLRGN02",
               phone: "2225550123",
@@ -258,8 +258,8 @@ export function OriginacionFlowPage() {
   if (!trace) {
     return (
       <EmptyState
-        title="Traza no encontrada"
-        description="El trace_id solicitado no existe en el store demo."
+        title="Seguimiento no encontrado"
+        description="El proceso solicitado no está disponible."
         action={<Button onClick={() => navigate("/solicitud")}>Iniciar originación</Button>}
       />
     );
@@ -269,10 +269,10 @@ export function OriginacionFlowPage() {
     <>
       <PageHeader
         title="Flujo de originación"
-        description={`Trace ID: ${trace.trace_id}`}
+        description="Captura y seguimiento de la originación"
         actions={
           <Button type="button" variant="outline" onClick={() => navigate(`/trazas/${trace.trace_id}`)}>
-            Ver detalle de traza
+            Ver seguimiento
           </Button>
         }
       />
@@ -287,12 +287,12 @@ export function OriginacionFlowPage() {
             <p className="text-xs font-semibold text-slate-500">Tipo: {trace.person_type ? personTypeLabels[trace.person_type] : "No definido"}</p>
           </div>
         </Card>
-        <Card title="Pre-solicitud ligada">
+        <Card title="Solicitud relacionada">
           {trace.application_id ? (
             <div className="space-y-2">
               <p className="font-bold text-[#0F4C81]">{trace.application_id}</p>
               <Link className="text-xs font-semibold text-slate-500 hover:text-[#0F4C81]" to={`/solicitudes/${trace.application_id}`}>
-                Ver solicitud en dashboard
+                Ver solicitud
               </Link>
             </div>
           ) : (
@@ -312,7 +312,7 @@ export function OriginacionFlowPage() {
         </Card>
       </div>
 
-      <Card title="Stepper del proceso" description="Orden correcto de originación separado del dashboard">
+      <Card title="Avance del proceso" description="Etapas de la originación">
         <div className="grid gap-2 md:grid-cols-5">
           {steps.map((step) => (
             <div
@@ -328,7 +328,7 @@ export function OriginacionFlowPage() {
       </Card>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
-        <Card title="Validaciones iniciales" description="Knockouts y cliente existente antes de captura">
+        <Card title="Validaciones iniciales" description="Reglas de elegibilidad y revisión de cliente">
           <div className="space-y-3">
             {!ineApproved && (
               <Button type="button" variant="outline" onClick={() => navigate(`/originacion/${trace.trace_id}/ine`)}>
@@ -336,7 +336,7 @@ export function OriginacionFlowPage() {
               </Button>
             )}
             {knockoutsApproved ? (
-              <p className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">Knockouts aprobados</p>
+              <p className="rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">Reglas iniciales aprobadas</p>
             ) : (
               trace.current_step !== "captura_datos" && (
                 <Button
@@ -347,7 +347,7 @@ export function OriginacionFlowPage() {
                   variant="secondary"
                   onClick={() => runAction(() => runKnockoutsValidation(trace.trace_id))}
                 >
-                  Ejecutar knockouts
+                  Ejecutar validaciones
                 </Button>
               )
             )}
@@ -368,14 +368,12 @@ export function OriginacionFlowPage() {
               </Button>
             )}
             <p className="text-sm text-slate-500">
-              La captura se habilita solo cuando INE, knockouts y cliente existente están aprobados.
+              La captura se habilita cuando la INE y las validaciones iniciales están aprobadas.
             </p>
           </div>
         </Card>
-        <Card title="Separación de experiencia" description="Este flujo corre fuera del dashboard">
-          <p className="text-sm text-slate-500">
-            El dashboard solo monitorea trazas y solicitudes. La ejecución asistida de originación permanece en este layout independiente.
-          </p>
+        <Card title="Siguiente paso" description="Continúa al completar las validaciones iniciales">
+          <p className="text-sm text-slate-500">La captura de datos estará disponible cuando las revisiones requeridas hayan concluido.</p>
         </Card>
       </div>
 
@@ -383,9 +381,9 @@ export function OriginacionFlowPage() {
         <Card title="Captura de datos" description="Disponible después de validaciones iniciales aprobadas">
           {trace.application_id ? (
             <div className="rounded-xl bg-green-50 p-4">
-              <p className="font-semibold text-green-800">Solicitud creada y ligada al trace_id.</p>
+              <p className="font-semibold text-green-800">Solicitud creada correctamente.</p>
               <p className="mt-1 text-sm text-green-700">
-                Puedes continuar a documentos en este flujo. El detalle de solicitud vive en el dashboard.
+                Puedes continuar con la integración del expediente documental.
               </p>
               <Button className="mt-4" type="button" variant="secondary" onClick={() => navigate(`/originacion/${trace.trace_id}/documentos`)}>
                 Ir a documentos
@@ -409,7 +407,7 @@ export function OriginacionFlowPage() {
                 />
                 <Select
                   disabled={!canCreateApplication}
-                  label="Escenario"
+                  label="Perfil"
                   options={scenarioOptions}
                   value={scenario}
                   onChange={(event) => setScenario(event.target.value as ApplicationScenario)}
@@ -439,7 +437,7 @@ export function OriginacionFlowPage() {
               busyDocumentId={busyDocumentId}
               documents={application.documents}
               title="Expediente documental"
-              description="Carga simulada de documentos según tipo de persona"
+              description="Documentos requeridos según el tipo de persona"
               onStatusChange={changeDocumentStatus}
               onUpload={uploadDocument}
             />

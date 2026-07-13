@@ -15,7 +15,7 @@ import { Card } from "../shared/components/Card";
 import { EmptyState } from "../shared/components/EmptyState";
 import { MetricCard } from "../shared/components/MetricCard";
 import { SkeletonCard } from "../shared/components/Skeleton";
-import { formatDateTime, formatMoney, traceStepLabels } from "../shared/lib/formatters";
+import { formatDateTime, formatMoney, personTypeLabels, traceStepLabels } from "../shared/lib/formatters";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -32,7 +32,7 @@ export function DashboardPage() {
       setSummary(nextSummary);
       setTraces(nextTraces);
     } catch {
-      setError("No se pudo cargar el dashboard demo");
+      setError("No se pudo cargar el dashboard");
     } finally {
       setLoading(false);
     }
@@ -91,9 +91,9 @@ export function DashboardPage() {
         <MetricCard icon={<AlertTriangle className="h-5 w-5" />} label="Rechazadas" value={summary.rejected} description={formatMoney(summary.totalRequestedAmount)} />
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-3">
-        <MetricCard icon={<GitBranch className="h-5 w-5" />} label="Trazas generadas" value={summary.totalTraces} />
-        <MetricCard icon={<ListChecks className="h-5 w-5" />} label="Trazas en proceso" value={summary.runningTraces} />
-        <MetricCard icon={<FileWarning className="h-5 w-5" />} label="Trazas fallidas" value={summary.failedTraces} />
+        <MetricCard icon={<GitBranch className="h-5 w-5" />} label="Seguimientos generados" value={summary.totalTraces} />
+        <MetricCard icon={<ListChecks className="h-5 w-5" />} label="Seguimientos en proceso" value={summary.runningTraces} />
+        <MetricCard icon={<FileWarning className="h-5 w-5" />} label="Seguimientos con incidencia" value={summary.failedTraces} />
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr]">
         <ApplicationsFunnel summary={summary} />
@@ -101,11 +101,11 @@ export function DashboardPage() {
       </div>
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
         <Card
-          title="Últimas trazas"
-          description="Monitoreo del flujo separado de originación"
+          title="Seguimientos recientes"
+          description="Monitoreo de los procesos de originación"
           actions={
             <Button size="sm" type="button" variant="outline" onClick={() => navigate("/trazas")}>
-              Ver trazas
+              Ver seguimientos
             </Button>
           }
         >
@@ -117,7 +117,7 @@ export function DashboardPage() {
                 to={`/trazas/${trace.trace_id}`}
               >
                 <div>
-                  <p className="font-bold text-[#0F4C81]">{trace.trace_id}</p>
+                  <p className="font-bold text-[#0F4C81]">{trace.person_type ? personTypeLabels[trace.person_type] : "Originación"}</p>
                   <p className="text-xs text-slate-500">{traceStepLabels[trace.current_step]}</p>
                 </div>
                 <TraceStatusBadge status={trace.status} />
@@ -125,7 +125,7 @@ export function DashboardPage() {
             ))}
           </div>
         </Card>
-        <Card title="Últimos eventos" description="Actividad reciente por trace_id">
+        <Card title="Últimos eventos" description="Actividad reciente de originación">
           <div className="space-y-3">
             {latestEvents.map((event) => (
               <Link
@@ -138,7 +138,7 @@ export function DashboardPage() {
                   <TraceEventStatusBadge status={event.status} />
                 </div>
                 <p className="mt-1 text-xs text-slate-500">
-                  {event.trace_id} · {formatDateTime(event.created_at)}
+                  {formatDateTime(event.created_at)}
                 </p>
               </Link>
             ))}

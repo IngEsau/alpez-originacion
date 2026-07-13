@@ -30,7 +30,7 @@ export function ApplicationsPage() {
     try {
       setApplications(await getApplications(nextFilters));
     } catch {
-      setError("No se pudo cargar la bandeja demo.");
+      setError("No se pudo cargar la bandeja de solicitudes.");
     } finally {
       setLoading(false);
     }
@@ -62,7 +62,7 @@ export function ApplicationsPage() {
           </div>
         )}
         {!loading && error && (
-          <EmptyState title={error} description="Reintenta leer el store local." action={<Button onClick={() => load()}>Reintentar</Button>} />
+          <EmptyState title={error} description="Reintenta cargar la información." action={<Button onClick={() => load()}>Reintentar</Button>} />
         )}
         {!loading && !error && applications.length === 0 && <ApplicationsEmptyState />}
         {!loading && !error && applications.length > 0 && <ApplicationsTable applications={applications} />}

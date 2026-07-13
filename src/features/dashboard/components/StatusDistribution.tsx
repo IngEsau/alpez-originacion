@@ -4,7 +4,7 @@ import { ApplicationScenarioBadge, ApplicationStatusBadge } from "../../../share
 
 export function StatusDistribution({ summary }: { summary: DashboardSummary }) {
   return (
-    <Card title="Distribución" description="Estados y escenarios del portafolio demo">
+    <Card title="Distribución" description="Estados y perfiles de las solicitudes">
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-2">
           <p className="text-xs font-bold uppercase text-slate-400">Por estado</p>
@@ -16,7 +16,7 @@ export function StatusDistribution({ summary }: { summary: DashboardSummary }) {
           ))}
         </div>
         <div className="space-y-2">
-          <p className="text-xs font-bold uppercase text-slate-400">Por escenario</p>
+          <p className="text-xs font-bold uppercase text-slate-400">Por perfil</p>
           {summary.byScenario.map((item) => (
             <div key={item.scenario} className="flex items-center justify-between rounded-xl bg-slate-50 p-2">
               <ApplicationScenarioBadge scenario={item.scenario} />

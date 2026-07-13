@@ -37,7 +37,7 @@ export function ValidationPanel({ application, onRefresh }: { application: Appli
 
   return (
     <div className="space-y-5">
-      <Card title="Validaciones" description="Panel de validaciones simuladas del flujo de originación">
+      <Card title="Validaciones" description="Resultados de las revisiones del flujo de originación">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {summary.map((validation) => (
             <div key={validation.type} className="rounded-xl border border-slate-200 p-3">

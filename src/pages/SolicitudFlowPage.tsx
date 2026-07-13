@@ -19,7 +19,7 @@ import {
   UserRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChoiceCard } from "../features/solicitud/components/ChoiceCard";
 import { QuestionScreen } from "../features/solicitud/components/QuestionScreen";
@@ -523,6 +523,7 @@ export function SolicitudFlowPage() {
   const [lastZipLookup, setLastZipLookup] = useState("");
   const [showLandingHelp, setShowLandingHelp] = useState(false);
   const [previewFile, setPreviewFile] = useState<StoredFile | null>(null);
+  const actionInFlightRef = useRef(false);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -621,17 +622,27 @@ export function SolicitudFlowPage() {
     return STEP_NUMBER[flow.currentStep];
   }, [flow]);
 
-  const runAction = async (action: () => Promise<SolicitudFlowState>, redirect?: string) => {
+  const withActionLock = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
+    if (actionInFlightRef.current) return undefined;
+    actionInFlightRef.current = true;
     setSaving(true);
     setError(null);
     try {
-      const nextFlow = await action();
+      return await action();
+    } finally {
+      actionInFlightRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const runAction = async (action: () => Promise<SolicitudFlowState>, redirect?: string) => {
+    try {
+      const nextFlow = await withActionLock(action);
+      if (!nextFlow) return;
       setFlow(nextFlow);
       if (redirect) navigate(redirect);
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "No pudimos guardar este paso.");
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -642,24 +653,24 @@ export function SolicitudFlowPage() {
     "Preparando el resultado",
   ];
 
-  async function processAndSubmitSolicitud(targetFlowId = flow?.flowId) {
+  async function processAndSubmitSolicitudCore(targetFlowId = flow?.flowId) {
     if (!targetFlowId) return;
-    setSaving(true);
-    setError(null);
+    const processingFlow = await startSolicitudProcessing(targetFlowId);
+    setFlow(processingFlow);
+    for (let index = 0; index < processingMessages.length; index += 1) {
+      setProcessingIndex(index);
+      await new Promise((resolve) => window.setTimeout(resolve, 650));
+    }
+    const submitted = await submitSolicitudFlow(targetFlowId);
+    setFlow(submitted);
+    navigate(`/solicitud/${targetFlowId}/final`);
+  }
+
+  async function processAndSubmitSolicitud(targetFlowId = flow?.flowId) {
     try {
-      const processingFlow = await startSolicitudProcessing(targetFlowId);
-      setFlow(processingFlow);
-      for (let index = 0; index < processingMessages.length; index += 1) {
-        setProcessingIndex(index);
-        await new Promise((resolve) => window.setTimeout(resolve, 650));
-      }
-      const submitted = await submitSolicitudFlow(targetFlowId);
-      setFlow(submitted);
-      navigate(`/solicitud/${targetFlowId}/final`);
+      await withActionLock(() => processAndSubmitSolicitudCore(targetFlowId));
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -830,7 +841,7 @@ export function SolicitudFlowPage() {
   }
 
   if (flow.currentStep === "tipo_solicitante") {
-    const demoWarning = import.meta.env.VITE_DEMO_MODE === "true"
+    const demoWarning = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === "true"
       ? demoScenarioPersonTypeWarning(flow.demoCreditScenario, flow.applicantKind)
       : null;
 
@@ -1434,38 +1445,33 @@ export function SolicitudFlowPage() {
     const canConfirmCode = otpCode.length === 6;
     const canContinue = verification.codeVerified;
     const sendCode = async (eventName?: "sms_enviado" | "otp_reenviado") => {
-      setSaving(true);
-      setError(null);
       setOtpSuccessMessage("");
       try {
-        const nextFlow = await sendPhoneVerificationCode(flow.flowId, eventName);
+        const nextFlow = await withActionLock(() => sendPhoneVerificationCode(flow.flowId, eventName));
+        if (!nextFlow) return;
         setFlow(nextFlow);
         setOtpCode("");
         setResendCooldown(30);
         setOtpSuccessMessage("Te enviamos un código por SMS.");
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : "No pudimos enviar el código.");
-      } finally {
-        setSaving(false);
       }
     };
     const confirmCode = async () => {
-      setSaving(true);
-      setError(null);
       setOtpSuccessMessage("");
       try {
-        const nextFlow = await verifyPhoneCode(flow.flowId, otpCode);
-        if (nextFlow.phoneVerification.codeVerified) {
-          setOtpSuccessMessage("Celular verificado correctamente.");
-          setFlow(await updateSolicitudStep(nextFlow.flowId, "autorizacion"));
-        } else {
-          setFlow(nextFlow);
-          setError(nextFlow.phoneVerification.lastError ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.");
-        }
+        await withActionLock(async () => {
+          const nextFlow = await verifyPhoneCode(flow.flowId, otpCode);
+          if (nextFlow.phoneVerification.codeVerified) {
+            setOtpSuccessMessage("Celular verificado correctamente.");
+            setFlow(await updateSolicitudStep(nextFlow.flowId, "autorizacion"));
+          } else {
+            setFlow(nextFlow);
+            setError(nextFlow.phoneVerification.lastError ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.");
+          }
+        });
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : "No pudimos confirmar el código.");
-      } finally {
-        setSaving(false);
       }
     };
 
@@ -1596,16 +1602,14 @@ export function SolicitudFlowPage() {
         setError("Necesitamos tu autorización para continuar con la solicitud.");
         return;
       }
-      setSaving(true);
-      setError(null);
       try {
-        const authorizedFlow = await acceptAuthorization(flow.flowId, true);
-        setFlow(authorizedFlow);
-        await processAndSubmitSolicitud(authorizedFlow.flowId);
+        await withActionLock(async () => {
+          const authorizedFlow = await acceptAuthorization(flow.flowId, true);
+          setFlow(authorizedFlow);
+          await processAndSubmitSolicitudCore(authorizedFlow.flowId);
+        });
       } catch (actionError) {
         setError(actionError instanceof Error ? actionError.message : "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
-      } finally {
-        setSaving(false);
       }
     };
 

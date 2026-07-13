@@ -21,16 +21,16 @@ export function LoginPage() {
   return (
     <form className="space-y-4" onSubmit={submit}>
       <div>
-        <h2 className="text-xl font-bold text-slate-950">Acceso demo</h2>
-        <p className="mt-1 text-sm text-slate-500">Entra con cualquier dato para presentar el flujo MVP.</p>
+        <h2 className="text-xl font-bold text-slate-950">Acceso al panel</h2>
+        <p className="mt-1 text-sm text-slate-500">Ingresa tus credenciales para continuar.</p>
       </div>
-      <Input defaultValue="demo@alpez.local" label="Correo" name="email" type="email" />
-      <Input defaultValue="demo" label="Contraseña" name="password" type="password" />
+      <Input label="Correo" name="email" placeholder="nombre@empresa.com" type="email" />
+      <Input label="Contraseña" name="password" placeholder="Ingresa tu contraseña" type="password" />
       <Button className="w-full" icon={<ArrowRight className="h-4 w-4" />} loading={loading} type="submit">
-        Entrar al demo
+        Entrar al panel
       </Button>
       <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
-        No hay autenticación real, JWT ni roles productivos. La sesión se guarda localmente solo para la demo.
+        Acceso exclusivo para personal autorizado de ALPEZ.
       </p>
     </form>
   );

@@ -134,14 +134,40 @@ function smsValidationFromBusinessError(error: unknown): ValidateSmsResult | nul
   const data = envelope?.data && typeof envelope.data === "object" ? envelope.data : undefined;
   return {
     valid: false,
-    ...(data ?? {}),
+    ...(typeof data?.etapa_actual === "string" ? { etapa_actual: data.etapa_actual } : {}),
     message: envelope?.message ?? envelope?.mensaje ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.",
+  };
+}
+
+export function mapValidateSmsResponse(response: unknown): ValidateSmsResult {
+  const envelope = asRecord(response);
+  const data = asRecord(envelope?.data);
+  const valid = data?.valid;
+  const message = envelope?.message ?? envelope?.mensaje;
+  const responseCode = Number(envelope?.code);
+
+  if (envelope?.success === false && responseCode !== 422) {
+    throw new Error(typeof message === "string" && message.trim() ? message : "No pudimos confirmar el código.");
+  }
+
+  if (valid !== true && valid !== false) {
+    throw new Error("Respuesta de verificación inválida.");
+  }
+
+  return {
+    valid,
+    ...(typeof data?.etapa_actual === "string" ? { etapa_actual: data.etapa_actual } : {}),
+    ...(typeof message === "string" && message.trim() ? { message } : {}),
   };
 }
 
 export async function validateSms(payload: ValidateSmsPayload): Promise<ValidateSmsResult> {
   try {
-    return await postEnvelope<ValidateSmsPayload, ValidateSmsResult>("/v1/onboarding/validar-sms", payload);
+    const response = await apiRequest<ApiEnvelope<ValidateSmsResult>>("/v1/onboarding/validar-sms", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return mapValidateSmsResponse(response);
   } catch (error) {
     const businessResult = smsValidationFromBusinessError(error);
     if (businessResult) return businessResult;

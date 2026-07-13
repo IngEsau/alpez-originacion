@@ -93,7 +93,6 @@ function AgentCreditSummary({
 
   const identificationRows: Array<[string, string]> = [
     ["Folio", application.folio],
-    ["Trace ID", application.trace_id],
     ["Solicitante", application.applicantName],
     ["Tipo de persona", application.personType === "fisica" ? "Persona Física" : "Persona Moral"],
     ["Teléfono", phone],
@@ -109,8 +108,8 @@ function AgentCreditSummary({
     ["Línea final aprobada", formatMoney(application.finalApprovedCreditLine ?? null)],
     ["Fecha de evaluación", evaluation?.evaluatedAt ? formatDateTime(evaluation.evaluatedAt) : "Pendiente"],
   ];
-  if (import.meta.env.VITE_DEMO_MODE === "true" && application.demoCreditScenario) {
-    evaluationRows.push(["Escenario demo aplicado", application.demoCreditScenario]);
+  if (import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === "true" && application.demoCreditScenario) {
+    evaluationRows.push(["Configuración de evaluación", application.demoCreditScenario]);
   }
 
   const documentationRows: Array<[string, string]> = [
@@ -135,7 +134,7 @@ function AgentCreditSummary({
   }
 
   return (
-    <Card title="Evaluación operativa" description="Información técnica visible solo para el equipo interno">
+    <Card title="Evaluación operativa" description="Información de identificación, evaluación y seguimiento">
       <div className="grid gap-4 lg:grid-cols-2">
         <InfoGrid rows={identificationRows} title="Identificación" />
         <InfoGrid rows={evaluationRows} title="Evaluación" />
@@ -371,7 +370,7 @@ export function ApplicationDetailPage() {
     try {
       setApplication(await getApplicationById(id));
     } catch {
-      setError("No se pudo cargar la solicitud demo.");
+      setError("No se pudo cargar la solicitud.");
     } finally {
       setLoading(false);
     }
@@ -430,9 +429,9 @@ export function ApplicationDetailPage() {
           id: createId("tl"),
           applicationId: application.id,
           status: application.status,
-          title: "Evaluación aplicada desde simulador",
+          title: "Evaluación aplicada manualmente",
           description: workflow.label,
-          actor: "Agente demo",
+          actor: "Agente ALPEZ",
           createdAt: new Date().toISOString(),
         },
       ],
@@ -474,7 +473,7 @@ export function ApplicationDetailPage() {
           status: application.status,
           title: "Acción de seguimiento",
           description: action,
-          actor: "Agente demo",
+          actor: "Agente ALPEZ",
           createdAt: new Date().toISOString(),
         },
       ],
@@ -544,7 +543,7 @@ export function ApplicationDetailPage() {
             status: application.status,
             title: "credit_line_confirmed",
             description: `Línea final aprobada: ${formatMoney(amount)}. ${observations}`,
-            actor: "Agente demo",
+            actor: "Agente ALPEZ",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -627,7 +626,7 @@ export function ApplicationDetailPage() {
             status: "rechazada",
             title: "Investigación legal rechazada",
             description: "No se permite confirmar línea ni preparar contratos.",
-            actor: "Agente demo",
+            actor: "Agente ALPEZ",
             createdAt: new Date().toISOString(),
           },
         ],
@@ -652,7 +651,7 @@ export function ApplicationDetailPage() {
     return (
       <EmptyState
         title={error}
-        description="Reintenta cargar el expediente desde el store local."
+        description="Reintenta cargar el expediente."
         action={<Button onClick={load}>Reintentar</Button>}
       />
     );
@@ -662,7 +661,7 @@ export function ApplicationDetailPage() {
     return (
       <EmptyState
         title="Solicitud no encontrada."
-        description="El identificador no existe en el store demo."
+        description="El identificador solicitado no está disponible."
         action={<Button onClick={() => navigate("/solicitudes")}>Volver a solicitudes</Button>}
       />
     );
@@ -677,7 +676,7 @@ export function ApplicationDetailPage() {
     application.finalApprovedCreditLine,
     application.contractStatus,
   );
-  const showDemoTools = import.meta.env.VITE_DEMO_MODE === "true";
+  const showDemoTools = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === "true";
 
   return (
     <>
@@ -732,7 +731,7 @@ export function ApplicationDetailPage() {
             </Card>
             <AgentCreditSummary application={application} evaluation={effectiveEvaluation} workflow={workflow} />
             <DecisionPanel application={application} onRefresh={refresh} />
-            <Card title="Acciones de seguimiento" description="Acciones operativas simuladas para el agente">
+            <Card title="Acciones de seguimiento" description="Acciones disponibles para el estado actual">
               <div className="flex flex-wrap gap-2">
                 {actionsForWorkflow(workflow.nextAction).length === 0 ? (
                   <p className="text-sm font-semibold text-slate-500">No hay acciones operativas disponibles.</p>

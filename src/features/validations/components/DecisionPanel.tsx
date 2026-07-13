@@ -28,7 +28,7 @@ export function DecisionPanel({ application, onRefresh }: { application: Applica
   return (
     <Card
       title="Modelo de decisión"
-      description="Resultado simulado, determinístico y no productivo"
+      description="Resultado de la evaluación de la solicitud"
       actions={
         <Button
           icon={<Play className="h-4 w-4" />}

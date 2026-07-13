@@ -44,12 +44,9 @@ export function ApplicationDetailHeader({
           <p className="mt-1 text-sm text-slate-500">
             {personTypeLabels[application.personType]} · Creada {formatDate(application.createdAt)} · {application.executiveName}
           </p>
-          <p className="mt-2 text-sm text-slate-500">
-            Trace ID:{" "}
-            <Link className="font-bold text-[#0F4C81] hover:underline" to={`/trazas/${application.trace_id}`}>
-              {application.trace_id}
-            </Link>
-          </p>
+          <Link className="mt-2 inline-block text-sm font-bold text-[#0F4C81] hover:underline" to={`/trazas/${application.trace_id}`}>
+            Ver seguimiento operativo
+          </Link>
         </div>
         <div className="flex flex-wrap gap-2">
           {workflow.nextAction !== "none" && (

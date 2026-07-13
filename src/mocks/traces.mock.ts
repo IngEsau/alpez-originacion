@@ -34,8 +34,8 @@ export const TRACES_MOCK: Trace[] = [
     updated_at: "2026-06-13T14:18:00.000Z",
     events: [
       event("TRC-20260613-0001", "originacion_iniciada", "Originación iniciada", "Se creó la traza de originación.", "success", 0),
-      event("TRC-20260613-0001", "ine_carga", "Carga frontal INE simulada", "Archivo frontal_ine.jpg cargado.", "success", 3),
-      event("TRC-20260613-0001", "ine_carga", "Carga reverso INE simulada", "Archivo reverso_ine.jpg cargado.", "success", 5),
+      event("TRC-20260613-0001", "ine_carga", "Carga frontal INE", "Archivo frontal_ine.jpg cargado.", "success", 3),
+      event("TRC-20260613-0001", "ine_carga", "Carga reverso INE", "Archivo reverso_ine.jpg cargado.", "success", 5),
       event("TRC-20260613-0001", "ine_carga", "Documentos INE listos para validación", "Frontal y reverso listos.", "success", 6),
       event("TRC-20260613-0001", "ine_validacion_padron", "INE aprobada", "Calidad, vigencia y padrón aprobados.", "success", 10, {
         status: "approved",
@@ -74,7 +74,7 @@ export const TRACES_MOCK: Trace[] = [
     updated_at: "2026-06-13T14:30:00.000Z",
     events: [
       event("TRC-20260613-0003", "originacion_iniciada", "Originación iniciada", "Se creó la traza de originación.", "success", 20),
-      event("TRC-20260613-0003", "ine_carga", "Carga frontal INE simulada", "Archivo frontal_ine.jpg cargado.", "success", 23),
+      event("TRC-20260613-0003", "ine_carga", "Carga frontal INE", "Archivo frontal_ine.jpg cargado.", "success", 23),
       event("TRC-20260613-0003", "ine_validacion_calidad", "INE observada", "La imagen no tiene calidad suficiente.", "warning", 30, {
         rejection_reason: "low_quality",
       }),

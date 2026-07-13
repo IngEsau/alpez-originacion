@@ -6,7 +6,6 @@ import { Input } from "../../../shared/components/Input";
 
 export function SmsValidationPanel({ applicationId, onDone }: { applicationId: string; onDone: () => void }) {
   const [code, setCode] = useState("");
-  const [demoCode, setDemoCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -14,7 +13,6 @@ export function SmsValidationPanel({ applicationId, onDone }: { applicationId: s
     setLoading(true);
     try {
       const result = await sendSmsCode(applicationId);
-      setDemoCode(result.code);
       setMessage(result.message);
       onDone();
     } finally {
@@ -45,7 +43,7 @@ export function SmsValidationPanel({ applicationId, onDone }: { applicationId: s
         </Button>
         <Input
           className="h-8"
-          placeholder="123456"
+          placeholder="Código de 6 dígitos"
           value={code}
           onChange={(event) => setCode(event.target.value)}
         />
@@ -53,7 +51,6 @@ export function SmsValidationPanel({ applicationId, onDone }: { applicationId: s
           Validar código
         </Button>
       </div>
-      {demoCode && <p className="mt-2 text-xs text-slate-500">Código demo: {demoCode}</p>}
       {message && <p className="mt-2 text-xs font-semibold text-slate-600">{message}</p>}
     </div>
   );

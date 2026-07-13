@@ -1,11 +1,12 @@
 import type { DemoUser } from "../../features/applications/types/application.types";
+import { productizeStoredCopy } from "./productCopy";
 
 const SESSION_KEY = "alpez_demo_session";
 
 export const demoUser: DemoUser = {
   id: "demo_user_1",
-  name: "Ejecutivo Demo",
-  email: "demo@alpez.local",
+  name: "Ejecutivo ALPEZ",
+  email: "ejecutivo@alpez.mx",
   role: "admin_demo",
 };
 
@@ -25,7 +26,10 @@ export function destroyDemoSession(): void {
 export function getDemoSession(): DemoUser | null {
   if (!hasDemoSession()) return null;
   try {
-    return JSON.parse(window.localStorage.getItem(SESSION_KEY) ?? "null") as DemoUser | null;
+    const user = JSON.parse(window.localStorage.getItem(SESSION_KEY) ?? "null") as DemoUser | null;
+    return user
+      ? { ...user, name: productizeStoredCopy(user.name), email: productizeStoredCopy(user.email) }
+      : null;
   } catch {
     return demoUser;
   }

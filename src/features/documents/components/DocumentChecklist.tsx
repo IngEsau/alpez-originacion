@@ -6,7 +6,7 @@ import { calculateDocumentSummary } from "../../applications/utils/workflowState
 export function DocumentChecklist({
   documents,
   title = "Checklist documental",
-  description = "Documentos requeridos para el expediente demo",
+  description = "Documentos requeridos para integrar el expediente",
   busyDocumentId,
   onUpload,
   onStatusChange,

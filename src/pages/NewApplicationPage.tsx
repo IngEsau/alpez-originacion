@@ -75,7 +75,7 @@ interface WizardForm {
 const initialForm: WizardForm = {
   scenario: "",
   requestedAmount: "50000",
-  executiveName: "Ejecutivo Demo",
+  executiveName: "Ejecutivo ALPEZ",
   firstName: "Mariana",
   lastName: "García",
   secondLastName: "López",
@@ -83,7 +83,7 @@ const initialForm: WizardForm = {
   curp: "GALM900101MPLRPR04",
   birthDate: "1990-01-01",
   phone: "2225550144",
-  email: "mariana.demo@alpez.local",
+  email: "mariana.garcia@correo.mx",
   businessActivity: "Tienda de conveniencia",
   businessSeniorityYears: "3",
   personalStreet: "Av. Reforma 120",
@@ -96,8 +96,8 @@ const initialForm: WizardForm = {
   businessMunicipality: "Puebla",
   businessState: "Puebla",
   businessZipCode: "72160",
-  legalName: "Comercial Demo Puebla S.A. de C.V.",
-  commercialName: "Comercial Demo Puebla",
+  legalName: "Comercial Puebla S.A. de C.V.",
+  commercialName: "Comercial Puebla",
   companyRfc: "CDP2101018A1",
   businessLine: "Comercio al por menor",
   constitutionDate: "2021-01-01",
@@ -111,7 +111,7 @@ const initialForm: WizardForm = {
   representativeRfc: "RULD870930Q81",
   representativeCurp: "RULD870930MPLZGL02",
   representativePhone: "2225550123",
-  representativeEmail: "legal.demo@alpez.local",
+  representativeEmail: "representante@comercialpuebla.mx",
   averageMonthlyIncome: "90000",
   annualSales: "1200000",
   averageBankBalance: "65000",
@@ -216,7 +216,7 @@ export function NewApplicationPage() {
     const nextErrors: Record<string, string> = {};
 
     if (currentStep === 1) {
-      if (!form.scenario) nextErrors.scenario = "Selecciona un escenario";
+      if (!form.scenario) nextErrors.scenario = "Selecciona un perfil";
       if (numberValue(form.requestedAmount) <= 0) nextErrors.requestedAmount = "Monto mayor a 0";
       if (!form.executiveName) nextErrors.executiveName = "Ejecutivo requerido";
     }
@@ -343,9 +343,9 @@ export function NewApplicationPage() {
           averageMonthlyIncome: numberValue(form.averageMonthlyIncome),
         },
         guarantor: {
-          fullName: "Aval Demo",
+          fullName: "Aval de la solicitud",
           phone: "2225550177",
-          email: "aval.demo@alpez.local",
+          email: "aval@correo.mx",
         },
       };
     }
@@ -388,9 +388,9 @@ export function NewApplicationPage() {
         email: form.representativeEmail,
       },
       guarantor: {
-        fullName: "Socio Aval Demo",
+        fullName: "Socio aval",
         phone: "2225550188",
-        email: "socio.aval@alpez.local",
+        email: "socio.aval@correo.mx",
       },
     };
   }, [documents, form, personType]);
@@ -408,7 +408,7 @@ export function NewApplicationPage() {
 
   return (
     <>
-      <PageHeader title="Nueva solicitud" description="Wizard de originación demo en 5 pasos" />
+      <PageHeader title="Nueva solicitud" description="Captura de originación en cinco pasos" />
       <div className="mb-5 grid gap-2 md:grid-cols-5">
         {stepLabels.map((label, index) => {
           const itemStep = (index + 1) as WizardStep;
@@ -427,7 +427,7 @@ export function NewApplicationPage() {
       </div>
 
       {step === 1 && (
-        <Card title="Tipo de solicitud" description="Selecciona el escenario y monto inicial">
+        <Card title="Tipo de solicitud" description="Selecciona el perfil y monto inicial">
           <div className="grid gap-3 md:grid-cols-3">
             {scenarioOptions.map((scenario) => (
               <button
@@ -441,7 +441,7 @@ export function NewApplicationPage() {
                 <FileText className="mb-3 h-5 w-5 text-[#0F4C81]" />
                 <p className="font-bold text-slate-950">{fullScenarioLabels[scenario]}</p>
                 <p className="mt-1 text-sm text-slate-500">
-                  {scenario === "persona_moral_no_hit_buro" ? "Modelo alternativo por KPIs." : "Consulta Buró simulada."}
+                  {scenario === "persona_moral_no_hit_buro" ? "Evaluación financiera complementaria." : "Revisión de historial crediticio."}
                 </p>
               </button>
             ))}
@@ -517,7 +517,7 @@ export function NewApplicationPage() {
       )}
 
       {step === 3 && (
-        <Card title="Información financiera" description="Datos mínimos para análisis y decisión simulada">
+        <Card title="Información financiera" description="Datos requeridos para el análisis de la solicitud">
           <div className="grid gap-4 md:grid-cols-2">
             <Input error={errors.averageMonthlyIncome} label="Ingresos promedio mensuales" type="number" value={form.averageMonthlyIncome} onChange={(event) => updateField("averageMonthlyIncome", event.target.value)} />
             <Input error={errors.annualSales} label={personType === "fisica" ? "Ventas promedio mensuales" : "Ventas anuales"} type="number" value={form.annualSales} onChange={(event) => updateField("annualSales", event.target.value)} />
@@ -546,7 +546,7 @@ export function NewApplicationPage() {
           {pendingDocuments > 0 && (
             <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
               <AlertTriangle className="mt-0.5 h-4 w-4" />
-              <p>Hay {pendingDocuments} documento(s) pendiente(s). Puedes continuar para efectos demo, pero la decisión podrá quedar observada.</p>
+              <p>Hay {pendingDocuments} documento(s) pendiente(s). Puedes continuar, pero la solicitud podrá requerir seguimiento documental.</p>
             </div>
           )}
           <DocumentChecklist
@@ -559,7 +559,7 @@ export function NewApplicationPage() {
       )}
 
       {step === 5 && createPayload && (
-        <Card title="Revisión y simulación" description="Confirma la solicitud antes de crear el folio demo">
+        <Card title="Revisión final" description="Confirma la información antes de crear el folio">
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl bg-slate-50 p-4">
               <p className="text-xs font-bold uppercase text-slate-400">Solicitud</p>
@@ -593,8 +593,6 @@ export function NewApplicationPage() {
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
             {pendingDocuments > 0 ? <Badge tone="warning">Decisión puede quedar observada</Badge> : <Badge tone="success">Checklist listo</Badge>}
-            <Badge tone="info">Sin backend real</Badge>
-            <Badge tone="neutral">Store local demo</Badge>
           </div>
         </Card>
       )}
@@ -609,7 +607,7 @@ export function NewApplicationPage() {
           </Button>
         ) : (
           <Button icon={<CheckCircle2 className="h-4 w-4" />} loading={creating} type="button" onClick={submit}>
-            Crear solicitud demo
+            Crear solicitud
           </Button>
         )}
       </div>

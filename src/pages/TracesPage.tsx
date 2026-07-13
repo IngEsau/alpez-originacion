@@ -24,8 +24,8 @@ export function TracesPage() {
   return (
     <>
       <PageHeader
-        title="Trazas"
-        description="Seguimiento operativo por trace_id"
+        title="Seguimientos"
+        description="Monitoreo de los procesos de originación"
         actions={
           <Button icon={<Plus className="h-4 w-4" />} type="button" onClick={() => navigate("/solicitud")}>
             Iniciar originación
@@ -41,8 +41,8 @@ export function TracesPage() {
       )}
       {!loading && traces.length === 0 && (
         <EmptyState
-          title="No hay trazas registradas"
-          description="Inicia una originación para generar el primer trace_id."
+          title="No hay seguimientos registrados"
+          description="Inicia una originación para generar el primer seguimiento."
           action={<Button onClick={() => navigate("/solicitud")}>Iniciar originación</Button>}
         />
       )}
@@ -51,7 +51,7 @@ export function TracesPage() {
           <table className="min-w-[900px] w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-400">
               <tr>
-                <th className="px-4 py-3">Trace ID</th>
+                <th className="px-4 py-3">Referencia</th>
                 <th className="px-4 py-3">Estado</th>
                 <th className="px-4 py-3">Paso actual</th>
                 <th className="px-4 py-3">Tipo</th>
@@ -61,9 +61,9 @@ export function TracesPage() {
               </tr>
             </thead>
             <tbody>
-              {traces.map((trace) => (
+              {traces.map((trace, index) => (
                 <tr key={trace.trace_id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-bold text-[#0F4C81]">{trace.trace_id}</td>
+                  <td className="px-4 py-3 font-bold text-[#0F4C81]">Seguimiento {String(index + 1).padStart(2, "0")}</td>
                   <td className="px-4 py-3"><TraceStatusBadge status={trace.status} /></td>
                   <td className="px-4 py-3 text-slate-600">{traceStepLabels[trace.current_step]}</td>
                   <td className="px-4 py-3 text-slate-600">{trace.person_type ? personTypeLabels[trace.person_type] : "N/A"}</td>
@@ -77,7 +77,7 @@ export function TracesPage() {
                       variant="outline"
                       onClick={() => navigate(`/trazas/${trace.trace_id}`)}
                     >
-                      Ver traza
+                      Ver seguimiento
                     </Button>
                   </td>
                 </tr>

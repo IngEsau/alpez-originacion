@@ -50,8 +50,8 @@ export function demoScenarioPersonTypeWarning(
   const expected = expectedApplicantKindForDemoScenario(scenario);
   if (!expected || expected === applicantKind) return null;
   return expected === "physical"
-    ? "Este escenario está configurado para Persona Física."
-    : "Este escenario está configurado para Persona Moral.";
+    ? "La configuración seleccionada corresponde a Persona Física."
+    : "La configuración seleccionada corresponde a Persona Moral.";
 }
 
 export function resolveDemoCreditScenario(

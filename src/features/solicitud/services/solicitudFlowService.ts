@@ -293,7 +293,7 @@ function decisionResultForApplication(application: Application, flow: SolicitudF
       ? evaluation.documentReviewRequired
         ? "Solicitud aprobada para seguimiento con documentos pendientes."
         : "Solicitud aprobada para seguimiento operativo."
-      : "Solicitud rechazada por regla de crédito simulada.",
+      : "Solicitud rechazada por regla de crédito.",
     evaluatedAt: evaluation.evaluatedAt ?? new Date().toISOString(),
   };
 }
@@ -313,8 +313,8 @@ async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise
   if (flow.demoCreditScenario) {
     await addTraceEvent(flow.trace_id, {
       step: "buro",
-      title: "Escenario demo aplicado",
-      description: "Se aplicó un escenario de evaluación forzado para demostración.",
+      title: "Configuración de evaluación aplicada",
+      description: "Se aplicaron parámetros específicos para la evaluación.",
       status: "warning",
       metadata: {
         eventName: "demo_credit_scenario_applied",
@@ -328,7 +328,7 @@ async function registerCreditEvaluationEvents(flow: SolicitudFlowState): Promise
   await addTraceEvent(flow.trace_id, {
     step: "buro",
     title: "Consulta Buró iniciada",
-    description: "Inicio de consulta simulada de historial crediticio.",
+    description: "Inicio de consulta de historial crediticio.",
     status: "running",
     metadata: { eventName: "bureau_query_started" },
   });

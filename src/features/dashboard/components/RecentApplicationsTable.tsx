@@ -16,7 +16,7 @@ export function RecentApplicationsTable({ applications }: { applications: Applic
   return (
     <Card
       title="Solicitudes recientes"
-      description="Últimos casos registrados en el store demo"
+      description="Últimos casos registrados en la plataforma"
       actions={
         <Button size="sm" type="button" variant="outline" onClick={() => navigate("/solicitudes")}>
           Ver todas

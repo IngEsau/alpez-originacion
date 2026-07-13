@@ -40,11 +40,6 @@ export function OriginacionLayout() {
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {traceId && (
-                <span className="rounded-full bg-[#E6F0FA] px-3 py-1 text-xs font-bold text-[#0F4C81]">
-                  Trace ID: {traceId}
-                </span>
-              )}
               <Button
                 icon={<Home className="h-4 w-4" />}
                 size="sm"

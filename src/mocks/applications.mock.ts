@@ -27,7 +27,7 @@ function timeline(
   status: ApplicationStatus,
   title: string,
   createdAt: string,
-  description = "Evento generado para demo.",
+  description = "Evento registrado durante el proceso.",
 ): TimelineEvent[] {
   return [
     {
@@ -36,7 +36,7 @@ function timeline(
       status: "nueva",
       title: "Solicitud creada",
       description: "Se generó el folio de originación.",
-      actor: "Ejecutivo Demo",
+      actor: "Ejecutivo ALPEZ",
       createdAt,
     },
     {
@@ -45,7 +45,7 @@ function timeline(
       status,
       title,
       description,
-      actor: "Sistema Demo",
+      actor: "Sistema ALPEZ",
       createdAt,
     },
   ];
@@ -62,7 +62,7 @@ function validations(
     label: VALIDATION_LABELS[type],
     status: statuses[type] ?? "pendiente",
     result: statuses[type] ? VALIDATION_LABELS[type] : undefined,
-    detail: statuses[type] ? "Resultado precargado para el caso demo." : undefined,
+    detail: statuses[type] ? "Resultado registrado para la solicitud." : undefined,
     completedAt: statuses[type] ? "2026-06-11T15:40:00.000Z" : undefined,
   }));
 }
@@ -118,7 +118,7 @@ function physicalPersonApplication(params: {
     bureauScore: params.bureauScore,
     finalScore: null,
     riskLevel: params.riskLevel,
-    executiveName: "Ejecutivo Demo",
+    executiveName: "Ejecutivo ALPEZ",
     physicalPerson: {
       firstName,
       lastName,
@@ -127,7 +127,7 @@ function physicalPersonApplication(params: {
       curp: "MEOJ850612HPLNRN07",
       birthDate: "1985-06-12",
       phone: "2225550188",
-      email: "prospecto@alpez.demo",
+      email: "prospecto@correo.mx",
       personalAddress: baseAddress,
       businessAddress: { ...baseAddress, street: "Calle Negocio", exteriorNumber: "45" },
       businessActivity: "Abarrotes y miscelánea",
@@ -135,11 +135,11 @@ function physicalPersonApplication(params: {
       averageMonthlyIncome: 42000,
     },
     guarantor: {
-      fullName: "María Aval Demo",
+      fullName: "María López Hernández",
       rfc: "AADM800101XY1",
       curp: "AADM800101MPLVLN05",
       phone: "2225550199",
-      email: "aval@alpez.demo",
+      email: "aval@correo.mx",
       address: baseAddress,
     },
     documents: createDocumentsForApplication(
@@ -189,7 +189,7 @@ function moralPersonApplication(params: {
     bureauScore: params.bureauScore,
     finalScore: params.finalScore,
     riskLevel: params.riskLevel,
-    executiveName: "Ejecutivo Demo",
+    executiveName: "Ejecutivo ALPEZ",
     moralPerson: {
       legalName: params.applicantName,
       commercialName: params.applicantName.replace("S.A. de C.V.", "").trim(),
@@ -213,15 +213,15 @@ function moralPersonApplication(params: {
       rfc: "RULD870930Q81",
       curp: "RULD870930MPLZGL02",
       phone: "2225550123",
-      email: "legal@alpez.demo",
+      email: "representante@empresa.mx",
       address: baseAddress,
     },
     guarantor: {
-      fullName: "Socio Aval Demo",
+      fullName: "Socio aval",
       rfc: "SADM790201QW2",
       curp: "SADM790201HPLCLM08",
       phone: "2225550177",
-      email: "socio.aval@alpez.demo",
+      email: "socio.aval@empresa.mx",
       address: baseAddress,
     },
     documents: createDocumentsForApplication(params.id, "moral", params.docStatus ?? "validado"),
@@ -431,7 +431,7 @@ export const APPLICATIONS_MOCK: Application[] = apps.map((app) => ({
             ? "Solicitud aprobada en modelo de decisión."
             : app.decision === "observada"
               ? "Solicitud observada por documentos pendientes."
-              : "Solicitud rechazada por regla demo.",
+              : "Solicitud rechazada por regla de evaluación.",
         )
       : undefined,
 }));
