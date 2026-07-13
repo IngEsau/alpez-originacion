@@ -59,6 +59,18 @@ export interface SaveCreditDataPayload {
   monto_solicitado: number;
 }
 
+export interface ConsultBureauPayload {
+  trace_id: string;
+}
+
+export interface ConsultBureauResult {
+  aprobadoPreliminar: boolean;
+  score?: number;
+  folio?: string;
+  estatusSeguimiento?: "EN_REVISION" | "RECHAZADA" | string;
+  mensaje?: string;
+}
+
 export interface OnboardingStepResult {
   trace_id: string;
   message: string;

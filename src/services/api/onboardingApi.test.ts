@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeApiEnvelope } from "./onboardingApi";
+import { mapConsultBureauResponse, normalizeApiEnvelope } from "./onboardingApi";
 
 describe("normalizeApiEnvelope", () => {
   it("uses message and trace_id from the envelope when data is an object", () => {
@@ -26,5 +26,64 @@ describe("normalizeApiEnvelope", () => {
         data: {},
       }),
     ).toThrow("No pudimos completar la operación.");
+  });
+});
+
+describe("mapConsultBureauResponse", () => {
+  it("maps an approved preliminary response", () => {
+    expect(
+      mapConsultBureauResponse({
+        code: 200,
+        success: true,
+        trace_id: "trace-1",
+        mensaje: "Score suficiente, pendiente de continuar el proceso",
+        data: {
+          aprobado_preliminar: true,
+          score: 720,
+          folio: "ORIG-2026-000001",
+          estatus_seguimiento: "EN_REVISION",
+        },
+      }),
+    ).toEqual({
+      aprobadoPreliminar: true,
+      score: 720,
+      folio: "ORIG-2026-000001",
+      estatusSeguimiento: "EN_REVISION",
+      mensaje: "Score suficiente, pendiente de continuar el proceso",
+    });
+  });
+
+  it("preserves approved preliminary false as a valid rejected result", () => {
+    expect(
+      mapConsultBureauResponse({
+        code: 200,
+        success: true,
+        trace_id: "trace-1",
+        mensaje: "Solicitud rechazada",
+        data: {
+          aprobado_preliminar: false,
+          score: 420,
+          folio: "ORIG-2026-000001",
+          estatus_seguimiento: "RECHAZADA",
+        },
+      }),
+    ).toEqual({
+      aprobadoPreliminar: false,
+      score: 420,
+      folio: "ORIG-2026-000001",
+      estatusSeguimiento: "RECHAZADA",
+      mensaje: "Solicitud rechazada",
+    });
+  });
+
+  it("throws when approved preliminary is not boolean", () => {
+    expect(() =>
+      mapConsultBureauResponse({
+        code: 200,
+        success: true,
+        trace_id: "trace-1",
+        data: { aprobado_preliminar: null },
+      }),
+    ).toThrow("Respuesta de evaluación inválida.");
   });
 });

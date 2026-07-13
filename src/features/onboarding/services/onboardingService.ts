@@ -2,6 +2,7 @@ import type { DocumentType } from "../../applications/types/application.types";
 import type { ApplicantKind, SolicitudDocument, StoredFile } from "../../solicitud/types/solicitud.types";
 import { ApiRequestError } from "../../../services/http/httpClient";
 import {
+  consultBureau,
   getAddressByZipCode,
   getRequiredDocuments,
   getStates,
@@ -17,6 +18,8 @@ import {
 import type {
   AddressCatalogResult,
   BackendRequiredDocument,
+  ConsultBureauPayload,
+  ConsultBureauResult,
   OnboardingStepResult,
   RequiredDocumentsResult,
   SaveBusinessDataPayload,
@@ -73,6 +76,9 @@ function friendlyErrorMessage(operation: string): string {
   }
   if (operation === "validateSms") {
     return "No pudimos confirmar el código. Intenta nuevamente.";
+  }
+  if (operation === "consultBureau") {
+    return "No fue posible completar la evaluación en este momento. Intenta nuevamente.";
   }
   return "No pudimos guardar este paso. Intenta nuevamente.";
 }
@@ -319,6 +325,21 @@ export async function saveOnboardingCreditData(payload: SaveCreditDataPayload): 
     "saveCreditData",
     () => saveCreditData(payload),
     () => ({ trace_id: payload.trace_id, message: "Monto guardado." }),
+  );
+}
+
+export async function consultOnboardingBureau(
+  payload: ConsultBureauPayload,
+  fallbackResult?: ConsultBureauResult,
+): Promise<ConsultBureauResult> {
+  return withApiFallback(
+    "consultBureau",
+    () => consultBureau(payload),
+    () => fallbackResult ?? {
+      aprobadoPreliminar: true,
+      estatusSeguimiento: "EN_REVISION",
+      mensaje: "Solicitud recibida.",
+    },
   );
 }
 

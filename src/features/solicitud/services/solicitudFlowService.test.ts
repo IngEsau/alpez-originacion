@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSolicitudFlow, isSmsVerificationApproved, saveFiscalIdentity } from "./solicitudFlowService";
+import { createSolicitudFlow, isSmsVerificationApproved, saveBusinessData, saveFiscalIdentity } from "./solicitudFlowService";
 
 function stubBrowserStorage() {
   const store = new Map<string, string>();
@@ -38,6 +38,26 @@ describe("solicitudFlowService fiscal identity step", () => {
     expect(updated.fiscalIdentity.confirmed).toBe(true);
     expect(updated.basicData.rfc).toBe("GAGE950615GT1");
     expect(updated.basicData.curp).toBe("GAGE950615HPLNYR01");
+  });
+});
+
+describe("solicitudFlowService business data step", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("advances directly to optional documents after business data", async () => {
+    stubBrowserStorage();
+    const flow = await createSolicitudFlow();
+
+    const updated = await saveBusinessData(flow.flowId, {
+      activity: "Comercio",
+      seniorityYears: "3",
+      monthlyIncome: "45000",
+      annualSales: "540000",
+    });
+
+    expect(updated.currentStep).toBe("documentos");
   });
 });
 

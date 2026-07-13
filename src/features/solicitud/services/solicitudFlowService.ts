@@ -17,10 +17,12 @@ import type {
   ApplicantKind,
   BasicData,
   BusinessData,
+  CreditEvaluation,
   DemoCreditScenario,
   FiscalIdentity,
   OnboardingGeneralData,
   PhoneVerificationState,
+  PublicCreditResult,
   SolicitudDocument,
   SolicitudFlowState,
   SolicitudStep,
@@ -29,8 +31,8 @@ import type {
 import { mapPublicDocumentStatus } from "../types/solicitud.types";
 import {
   loadRequiredDocuments,
+  consultOnboardingBureau,
   saveOnboardingBusinessData,
-  saveOnboardingCreditData,
   saveOnboardingGeneralData,
   sendOnboardingSms,
   startOnboardingFlow,
@@ -39,13 +41,9 @@ import {
   validateFiscalIdentityWithBackend,
   validateOnboardingSms,
 } from "../../onboarding/services/onboardingService";
-import {
-  areRequiredDocumentsComplete,
-  evaluateCreditByPersonType,
-  getPublicCreditResult,
-  scoreRangeLabel,
-} from "../utils/creditEvaluation";
+import { scoreRangeLabel } from "../utils/creditEvaluation";
 import { resolveDemoCreditScenario } from "../utils/demoCreditScenario";
+import type { ConsultBureauResult } from "../../../services/api/onboarding.types";
 import {
   basicDataFromGeneralData,
   EMPTY_FISCAL_IDENTITY,
@@ -206,22 +204,9 @@ function traceStepForPublicStep(step: SolicitudStep) {
   if (step === "revision_ine") return "ine_validacion_calidad";
   if (step === "documentos") return "documentos";
   if (step === "phone_verification") return "sms";
-  if (step === "resumen" || step === "final") return "finalizado";
+  if (step === "final") return "finalizado";
   if (step === "bienvenida" || step === "tipo_solicitante") return "originacion_iniciada";
   return "captura_datos";
-}
-
-function simulatedBureauInput(flow: SolicitudFlowState): { bureauHasHit: boolean; bureauScore: number | null } {
-  const searchable = `${flow.basicData.fullName} ${flow.basicData.companyName} ${flow.basicData.rfc}`.toLowerCase();
-  if (searchable.includes("sin historial")) return { bureauHasHit: false, bureauScore: null };
-  if (searchable.includes("rechazo")) return { bureauHasHit: true, bureauScore: 610 };
-
-  const amount = flow.requestedAmount ?? 30000;
-  if (amount <= 10000) return { bureauHasHit: true, bureauScore: 640 };
-  if (amount <= 20000) return { bureauHasHit: true, bureauScore: 660 };
-  if (amount <= 30000) return { bureauHasHit: true, bureauScore: 680 };
-  if (amount <= 40000) return { bureauHasHit: true, bureauScore: 700 };
-  return { bureauHasHit: true, bureauScore: 725 };
 }
 
 function riskFromScore(score: number | null): RiskLevel {
@@ -236,6 +221,55 @@ function rejectionReasonFromEvaluation(reason: "score_below_minimum" | "no_credi
   if (reason === "no_credit_history") return "sin_historial_crediticio";
   if (reason === "score_below_minimum") return "score_insuficiente";
   return undefined;
+}
+
+function isDemoBureauInputApproved(
+  input: { bureauHasHit: boolean; bureauScore: number | null },
+  personType: PersonType,
+): boolean {
+  if (!input.bureauHasHit || input.bureauScore === null) return false;
+  return personType === "fisica" ? input.bureauScore >= 630 : input.bureauScore >= 500;
+}
+
+function fallbackBureauResultForFlow(flow: SolicitudFlowState): ConsultBureauResult {
+  const personType = personTypeFromKind(flow.applicantKind);
+  const demoInput = resolveDemoCreditScenario(flow.demoCreditScenario ?? null, personType);
+
+  if (demoInput) {
+    return {
+      aprobadoPreliminar: isDemoBureauInputApproved(demoInput, personType),
+      score: demoInput.bureauScore ?? undefined,
+      folio: flow.folio,
+      estatusSeguimiento: isDemoBureauInputApproved(demoInput, personType) ? "EN_REVISION" : "RECHAZADA",
+      mensaje: isDemoBureauInputApproved(demoInput, personType) ? "Solicitud recibida." : "Solicitud rechazada.",
+    };
+  }
+
+  return {
+    aprobadoPreliminar: true,
+    score: personType === "fisica" ? 720 : 700,
+    folio: flow.folio,
+    estatusSeguimiento: "EN_REVISION",
+    mensaje: "Solicitud recibida.",
+  };
+}
+
+function creditEvaluationFromBureauResult(result: ConsultBureauResult): CreditEvaluation {
+  const approved = result.aprobadoPreliminar;
+  const score = typeof result.score === "number" ? result.score : null;
+
+  return {
+    bureauHasHit: score !== null,
+    bureauScore: score,
+    bureauPassed: approved,
+    publicDecision: approved ? "approved" : "rejected",
+    internalDecision: approved ? "approved_for_followup" : "rejected",
+    suggestedCreditLine: null,
+    documentsComplete: true,
+    documentReviewRequired: false,
+    rejectionReason: approved ? null : score === null ? "no_credit_history" : "score_below_minimum",
+    evaluatedAt: new Date().toISOString(),
+  };
 }
 
 function decisionResultForApplication(application: Application, flow: SolicitudFlowState): CreditDecision {
@@ -401,6 +435,11 @@ function documentsForKind(kind?: ApplicantKind): SolicitudDocument[] {
 }
 
 function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
+  const currentStep = String(flow.currentStep) === "monto"
+    ? "documentos"
+    : String(flow.currentStep) === "resumen"
+      ? "autorizacion"
+      : flow.currentStep;
   const generalData = flow.generalData
     ? normalizeGeneralDataInput(flow.generalData)
     : generalDataFromBasicData(flow.basicData);
@@ -414,6 +453,7 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
   if (flow.backendDocumentsLoaded) {
     return {
       ...flow,
+      currentStep,
       generalData,
       fiscalIdentity,
       basicData,
@@ -426,6 +466,7 @@ function normalizeFlow(flow: SolicitudFlowState): SolicitudFlowState {
 
   return {
     ...flow,
+    currentStep,
     generalData,
     fiscalIdentity,
     basicData,
@@ -677,27 +718,9 @@ export async function saveBusinessData(flowId: string, businessData: BusinessDat
     anios_operacion: Number(businessData.seniorityYears) || 0,
     ingresos_mensuales: Number(businessData.monthlyIncome) || 0,
   });
-  const nextFlow = saveFlow({ ...flow, businessData, currentStep: "monto" });
+  const nextFlow = saveFlow({ ...flow, businessData, currentStep: "documentos" });
   await addPublicEvent(nextFlow, "datos_negocio_capturados", "Datos del negocio capturados", "datos_negocio");
   await addPublicEvent(nextFlow, "business_data_saved", "Datos del negocio guardados", "datos_negocio");
-  return nextFlow;
-}
-
-export async function saveRequestedAmount(flowId: string, requestedAmount: number): Promise<SolicitudFlowState> {
-  await wait();
-  const flow = readStore().find((item) => item.flowId === flowId);
-  if (!flow) throw new Error("No encontramos esta solicitud.");
-  await saveOnboardingCreditData({
-    trace_id: backendTraceIdOrThrow(flow),
-    monto_solicitado: requestedAmount,
-  });
-  const nextFlow = saveFlow({ ...flow, requestedAmount, currentStep: "documentos" });
-  await addPublicEvent(nextFlow, "monto_solicitado_capturado", "Monto solicitado capturado", "monto", {
-    requested_amount: requestedAmount,
-  });
-  await addPublicEvent(nextFlow, "credit_data_saved", "Datos de crédito guardados", "monto", {
-    requested_amount: requestedAmount,
-  });
   return nextFlow;
 }
 
@@ -905,7 +928,7 @@ export async function acceptAuthorization(flowId: string, accepted: boolean): Pr
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
-  const nextFlow = saveFlow({ ...flow, authorizationAccepted: accepted, currentStep: accepted ? "resumen" : "autorizacion" });
+  const nextFlow = saveFlow({ ...flow, authorizationAccepted: accepted, currentStep: "autorizacion" });
   if (accepted) {
     await addPublicEvent(nextFlow, "autorizacion_aceptada", "Autorización aceptada", "autorizacion");
   }
@@ -1007,24 +1030,12 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
   }
   if (!flow.authorizationAccepted) throw new Error("Necesitamos tu autorización para continuar con la solicitud.");
 
-  const documentsComplete = areRequiredDocumentsComplete(flow.documents, {
-    hasGuarantor: flow.hasGuarantor,
-    hasCollateral: flow.hasCollateral,
-    ineLoaded: Boolean(flow.ineFront && flow.ineBack),
-  });
-  const bureauInput = simulatedBureauInput(flow);
-  const personType = personTypeFromKind(flow.applicantKind);
-  const demoBureauInput = resolveDemoCreditScenario(flow.demoCreditScenario ?? null, personType);
-  const evaluationInput = demoBureauInput ?? bureauInput;
-  const creditEvaluation = evaluateCreditByPersonType(
-    { personType },
-    {
-      bureauHasHit: evaluationInput.bureauHasHit,
-      bureauScore: evaluationInput.bureauScore,
-      documentsComplete,
-    },
+  const bureauConsultation = await consultOnboardingBureau(
+    { trace_id: backendTraceIdOrThrow(flow) },
+    fallbackBureauResultForFlow(flow),
   );
-  const publicCreditResult = getPublicCreditResult(creditEvaluation);
+  const creditEvaluation = creditEvaluationFromBureauResult(bureauConsultation);
+  const publicCreditResult: PublicCreditResult = bureauConsultation.aprobadoPreliminar ? "approved" : "rejected";
 
   let nextFlow = flow;
   if (!flow.application_id) {
@@ -1033,8 +1044,9 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
     const flowWithEvaluation = {
       ...flow,
       application_id: application.id,
-      folio: application.folio,
+      folio: bureauConsultation.folio ?? application.folio,
       creditEvaluation,
+      bureauConsultation,
       publicCreditResult,
     };
     const decisionResult = decisionResultForApplication(application, flowWithEvaluation);
@@ -1060,7 +1072,7 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       demoCreditScenario: flow.demoCreditScenario,
       validationEvents,
       notificationRequests,
-      documentsComplete,
+      documentsComplete: creditEvaluation.documentsComplete,
       documentSummary,
       internalWorkflowStatus: workflow.status,
       internalNextAction: workflow.nextAction,
@@ -1073,7 +1085,7 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
     nextFlow = {
       ...flowWithEvaluation,
       application_id: application.id,
-      folio: application.folio,
+      folio: bureauConsultation.folio ?? application.folio,
       currentStep: "final",
       submittedAt: new Date().toISOString(),
     };
@@ -1083,6 +1095,7 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
     const flowWithEvaluation = {
       ...flow,
       creditEvaluation,
+      bureauConsultation,
       publicCreditResult,
     };
     const decisionResult = decisionResultForApplication(existingApplication, flowWithEvaluation);
@@ -1109,7 +1122,7 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
       demoCreditScenario: flow.demoCreditScenario,
       validationEvents,
       notificationRequests,
-      documentsComplete,
+      documentsComplete: creditEvaluation.documentsComplete,
       documentSummary,
       internalWorkflowStatus: workflow.status,
       internalNextAction: workflow.nextAction,
@@ -1121,8 +1134,9 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
     });
     nextFlow = {
       ...flow,
-      folio: flow.folio ?? application.folio,
+      folio: bureauConsultation.folio ?? flow.folio ?? application.folio,
       creditEvaluation,
+      bureauConsultation,
       publicCreditResult,
       currentStep: "final",
       submittedAt: flow.submittedAt ?? new Date().toISOString(),

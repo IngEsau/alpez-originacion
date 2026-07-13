@@ -35,7 +35,6 @@ import {
   saveDocumentFile,
   saveFiscalIdentity,
   saveIneFile,
-  saveRequestedAmount,
   sendPhoneVerificationCode,
   startSolicitudProcessing,
   setCollateralChoice,
@@ -58,7 +57,6 @@ import type {
 } from "../features/solicitud/types/solicitud.types";
 import { PUBLIC_DOCUMENT_STATUS_LABELS } from "../features/solicitud/types/solicitud.types";
 import { demoScenarioPersonTypeWarning, parseDemoCreditScenario } from "../features/solicitud/utils/demoCreditScenario";
-import { isRequestedAmountInDemoRange, MAX_REQUESTED_AMOUNT, MIN_REQUESTED_AMOUNT } from "../features/solicitud/utils/requestedAmount";
 import {
   FALLBACK_STATES,
   isFiscalIdentityComplete,
@@ -81,8 +79,7 @@ import { AlpezLogo } from "../shared/components/AlpezLogo";
 import { fileToBase64 } from "../shared/lib/fileToBase64";
 import { cx } from "../shared/lib/formatters";
 
-const TOTAL_STEPS = 13;
-const AMOUNT_OPTIONS = [10000, 20000, 30000, 40000, 60000, 120000];
+const TOTAL_STEPS = 11;
 
 const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number> = {
   tipo_solicitante: 2,
@@ -91,21 +88,11 @@ const STEP_NUMBER: Record<Exclude<SolicitudStep, "final" | "bienvenida">, number
   datos_basicos: 5,
   fiscal_identity: 6,
   datos_negocio: 7,
-  monto: 8,
-  documentos: 9,
-  phone_verification: 10,
-  autorizacion: 11,
-  resumen: 12,
-  processing: 13,
+  documentos: 8,
+  phone_verification: 9,
+  autorizacion: 10,
+  processing: 11,
 };
-
-function money(value: number): string {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 function storedFileFromFile(file: File): Promise<StoredFile> {
   return fileToBase64(file).then((previewUrl) => ({
@@ -557,9 +544,6 @@ export function SolicitudFlowPage() {
       .then((result) => {
         setFlow(result);
         setOtpSuccessMessage(result?.phoneVerification.codeVerified ? "Celular verificado correctamente." : "");
-        if (result?.requestedAmount && !AMOUNT_OPTIONS.includes(result.requestedAmount)) {
-          setOtherAmount(String(result.requestedAmount));
-        }
       })
       .finally(() => setLoading(false));
   }, [flowId]);
@@ -653,27 +637,27 @@ export function SolicitudFlowPage() {
 
   const processingMessages = [
     "Revisando la información",
-    "Verificando la autorización",
-    "Consultando el historial crediticio",
+    "Confirmando la autorización",
+    "Evaluando tu solicitud",
     "Preparando el resultado",
   ];
 
-  async function processAndSubmitSolicitud() {
-    if (!flow) return;
+  async function processAndSubmitSolicitud(targetFlowId = flow?.flowId) {
+    if (!targetFlowId) return;
     setSaving(true);
     setError(null);
     try {
-      const processingFlow = await startSolicitudProcessing(flow.flowId);
+      const processingFlow = await startSolicitudProcessing(targetFlowId);
       setFlow(processingFlow);
       for (let index = 0; index < processingMessages.length; index += 1) {
         setProcessingIndex(index);
         await new Promise((resolve) => window.setTimeout(resolve, 650));
       }
-      const submitted = await submitSolicitudFlow(flow.flowId);
+      const submitted = await submitSolicitudFlow(targetFlowId);
       setFlow(submitted);
-      navigate(`/solicitud/${flow.flowId}/final`);
+      navigate(`/solicitud/${targetFlowId}/final`);
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "No pudimos finalizar la solicitud.");
+      setError(actionError instanceof Error ? actionError.message : "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
     } finally {
       setSaving(false);
     }
@@ -1132,82 +1116,6 @@ export function SolicitudFlowPage() {
     );
   }
 
-  if (flow.currentStep === "monto") {
-    const selectedAmount = otherAmount ? Number(otherAmount) : flow.requestedAmount;
-    const amountIsValid = isRequestedAmountInDemoRange(selectedAmount);
-
-    return (
-      <QuestionScreen
-        step={stepNumber}
-        totalSteps={TOTAL_STEPS}
-        title="¿Qué monto necesitas?"
-        description="Elige una opción o escribe un monto diferente."
-        actions={
-          <>
-            <Button
-              icon={<ArrowLeft className="h-4 w-4" />}
-              type="button"
-              variant="outline"
-              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "datos_negocio"))}
-            >
-              Atrás
-            </Button>
-            <Button
-              disabled={!amountIsValid}
-              icon={<ArrowRight className="h-4 w-4" />}
-              loading={saving}
-              size="lg"
-              type="button"
-              onClick={() => runAction(() => saveRequestedAmount(flow.flowId, selectedAmount ?? 0))}
-            >
-              Continuar
-            </Button>
-          </>
-        }
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
-          {AMOUNT_OPTIONS.map((amount) => (
-            <button
-              className={cx(
-                "flex min-h-14 items-center justify-center rounded-[8px] border px-4 text-base font-bold transition",
-                flow.requestedAmount === amount && !otherAmount
-                  ? "border-[#0F4C81] bg-[#F5FAFF] text-[#0F4C81] ring-2 ring-[#E6F0FA]"
-                  : "border-slate-200 bg-white text-slate-800 hover:border-[#0F4C81]",
-              )}
-              key={amount}
-              type="button"
-              onClick={() => {
-                setOtherAmount("");
-                setFlow({ ...flow, requestedAmount: amount });
-              }}
-            >
-              {money(amount)}
-            </button>
-          ))}
-        </div>
-        <div className="mt-4">
-          <Input
-            className="h-12 text-base"
-            label="Otro monto"
-            max={MAX_REQUESTED_AMOUNT}
-            min={MIN_REQUESTED_AMOUNT}
-            type="number"
-            value={otherAmount}
-            onChange={(event) => {
-              setOtherAmount(event.target.value);
-              setFlow({ ...flow, requestedAmount: Number(event.target.value) || undefined });
-            }}
-          />
-          {selectedAmount && !amountIsValid && (
-            <p className="mt-2 text-sm font-semibold text-red-600">
-              Selecciona o escribe un monto entre $10,000 y $120,000.
-            </p>
-          )}
-        </div>
-      </QuestionScreen>
-    );
-  }
-
   if (flow.currentStep === "documentos") {
     const counts = documentCounts(flow);
     const visibleDocuments = visibleSolicitudDocuments(flow);
@@ -1236,7 +1144,6 @@ export function SolicitudFlowPage() {
     const guaranteeDocuments = flow.backendDocumentsLoaded
       ? documentsByBackendGroup("garantia")
       : documentsByType(["garantia"]);
-    const hasMissing = counts.pending > 0;
     const isIneStartupDocument = (document: SolicitudDocument) => {
       const backendKey = document.backendKey?.toLowerCase() ?? "";
       return (
@@ -1414,13 +1321,12 @@ export function SolicitudFlowPage() {
               icon={<ArrowLeft className="h-4 w-4" />}
               type="button"
               variant="outline"
-              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "monto"))}
+              onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "datos_negocio"))}
             >
               Atrás
             </Button>
             <Button
               icon={<ArrowRight className="h-4 w-4" />}
-              disabled={hasMissing}
               loading={saving}
               size="lg"
               type="button"
@@ -1435,11 +1341,9 @@ export function SolicitudFlowPage() {
           <div>Documentos agregados: {counts.added}</div>
           <div>Pendientes por completar: {counts.pending}</div>
         </div>
-        {hasMissing && (
-          <div className="mb-5 rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            Agrega los documentos requeridos para continuar.
-          </div>
-        )}
+        <div className="mb-5 rounded-[8px] bg-[#F5FAFF] p-4 text-sm leading-6 text-slate-700">
+          Puedes continuar aunque no tengas todos los documentos. Si hace falta algo, un asesor podrá solicitarlo después.
+        </div>
         <>
           <div className="grid gap-5">
             {renderSection(
@@ -1551,10 +1455,11 @@ export function SolicitudFlowPage() {
       setOtpSuccessMessage("");
       try {
         const nextFlow = await verifyPhoneCode(flow.flowId, otpCode);
-        setFlow(nextFlow);
         if (nextFlow.phoneVerification.codeVerified) {
           setOtpSuccessMessage("Celular verificado correctamente.");
+          setFlow(await updateSolicitudStep(nextFlow.flowId, "autorizacion"));
         } else {
+          setFlow(nextFlow);
           setError(nextFlow.phoneVerification.lastError ?? "El código no coincide. Revisa los dígitos e inténtalo de nuevo.");
         }
       } catch (actionError) {
@@ -1686,12 +1591,30 @@ export function SolicitudFlowPage() {
   }
 
   if (flow.currentStep === "autorizacion") {
+    const continueWithAuthorization = async () => {
+      if (!flow.authorizationAccepted) {
+        setError("Necesitamos tu autorización para continuar con la solicitud.");
+        return;
+      }
+      setSaving(true);
+      setError(null);
+      try {
+        const authorizedFlow = await acceptAuthorization(flow.flowId, true);
+        setFlow(authorizedFlow);
+        await processAndSubmitSolicitud(authorizedFlow.flowId);
+      } catch (actionError) {
+        setError(actionError instanceof Error ? actionError.message : "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
+      } finally {
+        setSaving(false);
+      }
+    };
+
     return (
       <QuestionScreen
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
-        title="Autorización para revisar tu información e historial crediticio"
-        description="Necesitamos tu autorización para revisar la información que compartiste y continuar con el resultado."
+        title="Autorización para revisar tu información"
+        description="Necesitamos tu autorización para continuar con la evaluación de tu solicitud."
         actions={
           <>
             <Button
@@ -1703,17 +1626,12 @@ export function SolicitudFlowPage() {
               Atrás
             </Button>
             <Button
+              disabled={!flow.authorizationAccepted}
               icon={<ArrowRight className="h-4 w-4" />}
               loading={saving}
               size="lg"
               type="button"
-              onClick={() => {
-                if (!flow.authorizationAccepted) {
-                  setError("Necesitamos tu autorización para continuar con la solicitud.");
-                  return;
-                }
-                void runAction(() => acceptAuthorization(flow.flowId, true));
-              }}
+              onClick={() => void continueWithAuthorization()}
             >
               Continuar
             </Button>
@@ -1731,7 +1649,7 @@ export function SolicitudFlowPage() {
             }}
           />
           <span className="text-base leading-7 text-slate-700">
-            Autorizo a ALPEZ a revisar la información de esta solicitud, consultar mi historial crediticio y contactarme para continuar.
+            Autorizo que mi información sea revisada para continuar con la evaluación de mi solicitud.
           </span>
         </label>
         {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
@@ -1767,68 +1685,36 @@ export function SolicitudFlowPage() {
             </div>
           ))}
         </div>
-        {error && <p className="mt-4 text-center text-sm font-semibold text-red-600">{error}</p>}
+        {error && (
+          <div className="mt-4 grid gap-3 text-center">
+            <p className="text-sm font-semibold text-red-600">{error}</p>
+            <Button loading={saving} type="button" variant="outline" onClick={() => void processAndSubmitSolicitud(flow.flowId)}>
+              Intentar nuevamente
+            </Button>
+          </div>
+        )}
       </QuestionScreen>
     );
   }
-
-  const docsSummary = documentCounts(flow);
-  const displayName =
-    flow.applicantKind === "company"
-      ? flow.basicData.companyName || flow.basicData.representativeName
-      : flow.basicData.fullName;
-  const fiscalSummaryRows = flow.fiscalIdentity.confirmed
-    ? [
-        ["RFC", flow.fiscalIdentity.rfc || "Sin capturar"],
-        ["CURP", flow.fiscalIdentity.curp || "Sin capturar"],
-      ]
-    : [];
 
   return (
     <QuestionScreen
       step={stepNumber}
       totalSteps={TOTAL_STEPS}
-      title="Revisa tu información"
-      description="Confirma que todo esté correcto antes de enviar."
+      title="Continuemos con tu solicitud"
+      description="Volveremos al paso correspondiente para continuar."
       actions={
-        <>
-          <Button
-            icon={<ArrowLeft className="h-4 w-4" />}
-            type="button"
-            variant="outline"
-            onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "autorizacion"))}
-          >
-            Atrás
-          </Button>
-          <Button
-            icon={<ArrowRight className="h-4 w-4" />}
-            loading={saving}
-            size="lg"
-            type="button"
-            onClick={() => void processAndSubmitSolicitud()}
-          >
-            Enviar solicitud
-          </Button>
-        </>
+        <Button
+          icon={<ArrowRight className="h-4 w-4" />}
+          loading={saving}
+          size="lg"
+          type="button"
+          onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "documentos"))}
+        >
+          Ir a documentos
+        </Button>
       }
     >
-      <div className="grid gap-3">
-        {[
-          ["Solicitante", flow.applicantKind === "company" ? "Empresa" : "Persona física"],
-          ["Nombre", displayName || "Sin capturar"],
-          ["Teléfono", flow.basicData.phone || "Sin capturar"],
-          ["Correo", flow.basicData.email || "Sin capturar"],
-          ...fiscalSummaryRows,
-          ["Monto", money(flow.requestedAmount ?? 0)],
-          ["Documentos", `${docsSummary.added} agregados, ${docsSummary.pending} faltantes`],
-          ["Celular", flow.phoneVerified ? "Verificado" : "Pendiente"],
-        ].map(([label, value]) => (
-          <div className="flex items-center justify-between gap-4 rounded-[8px] bg-slate-50 p-4" key={label}>
-            <span className="text-sm font-semibold text-slate-500">{label}</span>
-            <span className="text-right font-bold text-slate-950">{value}</span>
-          </div>
-        ))}
-      </div>
       {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
     </QuestionScreen>
   );

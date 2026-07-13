@@ -2,6 +2,8 @@ import { ApiRequestError, apiRequest } from "../http/httpClient";
 import type {
   AddressCatalogResult,
   ApiEnvelope,
+  ConsultBureauPayload,
+  ConsultBureauResult,
   RequiredDocumentsResult,
   SaveBusinessDataPayload,
   SaveCreditDataPayload,
@@ -19,6 +21,10 @@ import type {
   ValidateSmsPayload,
   ValidateSmsResult,
 } from "./onboarding.types";
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
 
 export function normalizeApiEnvelope<T>(envelope: ApiEnvelope<T>): T & { trace_id?: string; message?: string } {
   const message = envelope.message ?? envelope.mensaje ?? "";
@@ -66,6 +72,36 @@ export function saveBusinessData(payload: SaveBusinessDataPayload): Promise<Onbo
 
 export function saveCreditData(payload: SaveCreditDataPayload): Promise<OnboardingStepResult> {
   return postEnvelope<SaveCreditDataPayload, OnboardingStepResult>("/v1/onboarding/credito", payload);
+}
+
+export function mapConsultBureauResponse(response: unknown): ConsultBureauResult {
+  const envelope = asRecord(response);
+  const data = asRecord(envelope?.data);
+  const approved = data?.aprobado_preliminar;
+
+  if (approved !== true && approved !== false) {
+    throw new Error("Respuesta de evaluación inválida.");
+  }
+
+  const score = data?.score;
+  const folio = data?.folio;
+  const status = data?.estatus_seguimiento;
+  const message = envelope?.mensaje ?? envelope?.message;
+
+  return {
+    aprobadoPreliminar: approved,
+    ...(typeof score === "number" ? { score } : {}),
+    ...(typeof folio === "string" && folio.trim() ? { folio } : {}),
+    ...(typeof status === "string" && status.trim() ? { estatusSeguimiento: status } : {}),
+    ...(typeof message === "string" && message.trim() ? { mensaje: message } : {}),
+  };
+}
+
+export function consultBureau(payload: ConsultBureauPayload): Promise<ConsultBureauResult> {
+  return apiRequest<ApiEnvelope<unknown>>("/v1/onboarding/consultar-buro", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }).then(mapConsultBureauResponse);
 }
 
 export function getRequiredDocuments(traceId: string): Promise<RequiredDocumentsResult> {

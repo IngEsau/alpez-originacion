@@ -10,11 +10,9 @@ export type SolicitudStep =
   | "datos_basicos"
   | "fiscal_identity"
   | "datos_negocio"
-  | "monto"
   | "documentos"
   | "phone_verification"
   | "autorizacion"
-  | "resumen"
   | "processing"
   | "final";
 
@@ -40,6 +38,14 @@ export interface CreditEvaluation {
   documentReviewRequired: boolean;
   rejectionReason: "score_below_minimum" | "no_credit_history" | null;
   evaluatedAt: string;
+}
+
+export interface BureauConsultationResult {
+  aprobadoPreliminar: boolean;
+  score?: number;
+  folio?: string;
+  estatusSeguimiento?: string;
+  mensaje?: string;
 }
 
 export interface StoredFile {
@@ -157,6 +163,7 @@ export interface SolicitudFlowState {
   authorizationAccepted: boolean;
   demoCreditScenario?: DemoCreditScenario;
   creditEvaluation?: CreditEvaluation;
+  bureauConsultation?: BureauConsultationResult;
   publicCreditResult?: PublicCreditResult;
   processingStartedAt?: string;
   publicResultDisplayedAt?: string;
