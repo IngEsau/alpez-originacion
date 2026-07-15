@@ -49,6 +49,18 @@ export const API_FALLBACK_TO_MOCK = isApiFallbackEnabled(import.meta.env.VITE_AP
 
 type MockFallback<T> = () => T | Promise<T>;
 
+export class OnboardingOperationError extends Error {
+  operation: string;
+  originalError: unknown;
+
+  constructor(operation: string, message: string, originalError: unknown) {
+    super(message);
+    this.name = "OnboardingOperationError";
+    this.operation = operation;
+    this.originalError = originalError;
+  }
+}
+
 function logApiFallback(operation: string, error: unknown): void {
   if (import.meta.env.DEV) {
     console.error(`[ALPEZ onboarding] ${operation} failed. Falling back to mock flow.`, error);
@@ -113,7 +125,7 @@ export async function resolveApiOrMock<T>(input: {
     if (import.meta.env.DEV) {
       console.error(`[ALPEZ onboarding] ${input.operation} failed.`, error);
     }
-    throw new Error(friendlyErrorMessage(input.operation));
+    throw new OnboardingOperationError(input.operation, friendlyErrorMessage(input.operation), error);
   }
 }
 

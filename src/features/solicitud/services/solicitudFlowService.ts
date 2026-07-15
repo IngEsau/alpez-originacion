@@ -23,6 +23,7 @@ import type {
   OnboardingGeneralData,
   PhoneVerificationState,
   PublicCreditResult,
+  SolicitudCorrectionIssue,
   SolicitudDocument,
   SolicitudFlowState,
   SolicitudStep,
@@ -32,6 +33,7 @@ import { mapPublicDocumentStatus } from "../types/solicitud.types";
 import {
   loadRequiredDocuments,
   consultOnboardingBureau,
+  OnboardingOperationError,
   saveOnboardingBusinessData,
   saveOnboardingGeneralData,
   sendOnboardingSms,
@@ -41,9 +43,10 @@ import {
   validateFiscalIdentityWithBackend,
   validateOnboardingSms,
 } from "../../onboarding/services/onboardingService";
+import { ApiRequestError } from "../../../services/http/httpClient";
 import { scoreRangeLabel } from "../utils/creditEvaluation";
 import { resolveDemoCreditScenario } from "../utils/demoCreditScenario";
-import type { ConsultBureauResult } from "../../../services/api/onboarding.types";
+import type { ConsultBureauResult, StartOnboardingResult } from "../../../services/api/onboarding.types";
 import {
   basicDataFromGeneralData,
   EMPTY_FISCAL_IDENTITY,
@@ -54,10 +57,153 @@ import {
   normalizeGeneralDataInput,
   normalizeFiscalIdentity,
   resolveFiscalIdentityAfterGeneralData,
+  validateFiscalIdentity,
+  validateFiscalIdentityConsistency,
+  validateGeneralData,
 } from "../utils/generalData";
 import { applyIneOcrToGeneralData, extractFiscalIdentityFromOcr, fiscalIdentityFromOcr } from "../utils/ineOcr";
+import { optimizeImageDataUrl } from "../../../shared/lib/fileToBase64";
 
 const STORAGE_KEY = "alpez_public_solicitud_flows";
+export const SOLICITUD_RECOVERY_TTL_MS = 48 * 60 * 60 * 1000;
+export const INE_AUTO_CONTINUE_TIMEOUT_MS = 7_000;
+
+export class SolicitudCorrectionError extends Error {
+  issues: SolicitudCorrectionIssue[];
+
+  constructor(message: string, issues: SolicitudCorrectionIssue[]) {
+    super(message);
+    this.name = "SolicitudCorrectionError";
+    this.issues = issues;
+  }
+}
+
+export class SolicitudStorageError extends Error {
+  constructor() {
+    super("No pudimos guardar este archivo en el dispositivo. Intenta con una imagen más ligera o vuelve a tomar la foto.");
+    this.name = "SolicitudStorageError";
+  }
+}
+
+const GENERAL_FIELD_LABELS: Partial<Record<keyof OnboardingGeneralData, string>> = {
+  primerNombre: "primer nombre",
+  apellidoPaterno: "apellido paterno",
+  fechaNacimiento: "fecha de nacimiento",
+  genero: "género",
+  telefono: "celular",
+  correo: "correo electrónico",
+  estadoNacimientoId: "estado de nacimiento",
+  direccion: "calle",
+  numExt: "número exterior",
+  codigoPostal: "código postal",
+  estadoId: "estado del domicilio",
+  municipioId: "municipio",
+  coloniaId: "colonia",
+};
+
+function generalDataCorrectionIssues(flow: SolicitudFlowState): SolicitudCorrectionIssue[] {
+  return Object.entries(validateGeneralData(flow.generalData)).map(([field, message]) => ({
+    field,
+    label: GENERAL_FIELD_LABELS[field as keyof OnboardingGeneralData] ?? "dato personal",
+    message,
+    step: "datos_basicos" as const,
+  }));
+}
+
+function fiscalIdentityCorrectionIssues(flow: SolicitudFlowState): SolicitudCorrectionIssue[] {
+  const errors = {
+    ...validateFiscalIdentity(flow.fiscalIdentity),
+    ...validateFiscalIdentityConsistency(flow.fiscalIdentity, flow.generalData),
+  };
+  return Object.entries(errors).map(([field, message]) => ({
+    field,
+    label: field === "rfc" ? "RFC" : field === "curp" ? "CURP" : "estado de nacimiento",
+    message,
+    step: field === "curp" ? "ine" as const : field === "estadoNacimientoId" ? "datos_basicos" as const : "fiscal_identity" as const,
+  }));
+}
+
+function validateFlowBeforeSubmission(flow: SolicitudFlowState): void {
+  const issues = [...generalDataCorrectionIssues(flow), ...fiscalIdentityCorrectionIssues(flow)];
+  if (!flow.phoneVerified) {
+    issues.push({
+      field: "telefono",
+      label: "verificación de celular",
+      message: "Confirma tu celular con el código que recibiste.",
+      step: "phone_verification",
+    });
+  }
+  if (issues.length > 0) {
+    throw new SolicitudCorrectionError("Encontramos información que necesitas corregir antes de enviar tu solicitud.", issues);
+  }
+}
+
+function finalCorrectionError(error: unknown): SolicitudCorrectionError | null {
+  const originalError = error instanceof OnboardingOperationError ? error.originalError : error;
+  const body = originalError instanceof ApiRequestError ? originalError.body : originalError;
+  let searchable = "";
+  try {
+    searchable = JSON.stringify(body ?? error).toLocaleLowerCase("es-MX");
+  } catch {
+    searchable = error instanceof Error ? error.message.toLocaleLowerCase("es-MX") : "";
+  }
+
+  const issues: SolicitudCorrectionIssue[] = [];
+  if (searchable.includes("curp")) {
+    issues.push({
+      field: "curp",
+      label: "CURP",
+      message: "La CURP no coincide con la información de tu identificación. Vuelve a cargarla para corregirla.",
+      step: "ine",
+    });
+  }
+  if (searchable.includes("rfc")) {
+    issues.push({
+      field: "rfc",
+      label: "RFC",
+      message: "El RFC no coincide con tus datos personales. Revísalo antes de continuar.",
+      step: "fiscal_identity",
+    });
+  }
+  if (searchable.includes("estado_nacimiento") || searchable.includes("estado de nacimiento")) {
+    issues.push({
+      field: "estadoNacimientoId",
+      label: "estado de nacimiento",
+      message: "El estado de nacimiento no coincide con tu identificación.",
+      step: "datos_basicos",
+    });
+  }
+  if (searchable.includes("fecha_nacimiento") || searchable.includes("fecha de nacimiento")) {
+    issues.push({
+      field: "fechaNacimiento",
+      label: "fecha de nacimiento",
+      message: "La fecha de nacimiento no coincide con tu identificación.",
+      step: "datos_basicos",
+    });
+  }
+  if (searchable.includes("telefono") || searchable.includes("celular")) {
+    issues.push({
+      field: "telefono",
+      label: "celular",
+      message: "Revisa el número celular y vuelve a verificarlo.",
+      step: "datos_basicos",
+    });
+  }
+
+  if (issues.length === 0 && (searchable.includes("datos") || searchable.includes("informaci"))) {
+    issues.push({
+      field: "generalData",
+      label: "datos personales",
+      message: "Revisa que tus datos personales coincidan con tu identificación.",
+      step: "datos_basicos",
+    });
+  }
+
+  return issues.length > 0
+    ? new SolicitudCorrectionError("Tus datos capturados necesitan una corrección.", issues)
+    : null;
+}
+
 function backendTraceIdOrThrow(flow: SolicitudFlowState): string {
   const traceId = flow.backendTraceId || flow.trace_id;
   if (!traceId && USE_REAL_API) {
@@ -145,30 +291,125 @@ function readStore(): SolicitudFlowState[] {
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (!saved) return [];
 
+  let storedFlows: SolicitudFlowState[];
   try {
-    return JSON.parse(saved) as SolicitudFlowState[];
+    storedFlows = JSON.parse(saved) as SolicitudFlowState[];
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     return [];
   }
+
+  const now = Date.now();
+  const activeFlows = storedFlows.filter((flow) => {
+    const fallbackExpiration = new Date(flow.updatedAt || flow.createdAt).getTime() + SOLICITUD_RECOVERY_TTL_MS;
+    const expiration = flow.expiresAt ? new Date(flow.expiresAt).getTime() : fallbackExpiration;
+    return Number.isFinite(expiration) && expiration > now;
+  });
+  if (activeFlows.length !== storedFlows.length) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(activeFlows));
+    } catch {
+      // The valid in-memory result is still usable even if browser cleanup cannot be persisted.
+    }
+  }
+  return activeFlows;
+}
+
+function storedFileWithoutPayload(file?: StoredFile): StoredFile | undefined {
+  if (!file) return undefined;
+  const { previewUrl: _previewUrl, ...metadata } = file;
+  return metadata;
+}
+
+async function optimizeStoredImage(file?: StoredFile): Promise<StoredFile | undefined> {
+  if (!file?.previewUrl || !file.type.startsWith("image/")) return file;
+  return {
+    ...file,
+    previewUrl: await optimizeImageDataUrl(file.previewUrl, file.name, file.type),
+  };
+}
+
+function compactArchivedFlow(flow: SolicitudFlowState): SolicitudFlowState {
+  const hasStartedOnBackend = Boolean(flow.backendTraceId);
+  return {
+    ...flow,
+    ineFront: hasStartedOnBackend ? storedFileWithoutPayload(flow.ineFront) : undefined,
+    ineBack: hasStartedOnBackend ? storedFileWithoutPayload(flow.ineBack) : undefined,
+    ineReviewed: hasStartedOnBackend ? flow.ineReviewed : false,
+    ineProcessingStatus: hasStartedOnBackend ? flow.ineProcessingStatus : "idle",
+    ineProcessingRequestId: hasStartedOnBackend ? flow.ineProcessingRequestId : undefined,
+    ineProcessingStartedAt: hasStartedOnBackend ? flow.ineProcessingStartedAt : undefined,
+    ineProcessingMessage: hasStartedOnBackend ? flow.ineProcessingMessage : undefined,
+    currentStep: hasStartedOnBackend || flow.currentStep === "tipo_solicitante" ? flow.currentStep : "ine",
+    documents: flow.documents.map((document) => ({
+      ...document,
+      file: storedFileWithoutPayload(document.file),
+    })),
+  };
+}
+
+function isStorageQuotaError(error: unknown): boolean {
+  if (typeof DOMException !== "undefined" && error instanceof DOMException) {
+    return error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED";
+  }
+  return error instanceof Error && /quota|storage/i.test(error.message);
 }
 
 function writeStore(flows: SolicitudFlowState[]): void {
-  if (canUseLocalStorage()) {
+  if (!canUseLocalStorage()) return;
+
+  try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(flows));
+    return;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) throw new SolicitudStorageError();
+  }
+
+  const [currentFlow, ...archivedFlows] = flows;
+  const compactedFlows = currentFlow
+    ? [currentFlow, ...archivedFlows.map(compactArchivedFlow)]
+    : [];
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(compactedFlows));
+  } catch {
+    throw new SolicitudStorageError();
   }
 }
 
 function saveFlow(flow: SolicitudFlowState): SolicitudFlowState {
   const flows = readStore();
   const exists = flows.some((item) => item.flowId === flow.flowId);
-  const nextFlow = { ...flow, updatedAt: new Date().toISOString() };
-  writeStore(exists ? flows.map((item) => (item.flowId === flow.flowId ? nextFlow : item)) : [nextFlow, ...flows]);
+  const now = new Date();
+  const nextFlow = {
+    ...flow,
+    recoveryFolio: flow.recoveryFolio || createRecoveryFolio(),
+    expiresAt: new Date(now.getTime() + SOLICITUD_RECOVERY_TTL_MS).toISOString(),
+    updatedAt: now.toISOString(),
+  };
+  const otherFlows = exists
+    ? flows.filter((item) => item.flowId !== flow.flowId)
+    : flows;
+  writeStore([nextFlow, ...otherFlows]);
   return structuredClone(nextFlow);
 }
 
 function createFlowId(): string {
   return `SOL-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+
+function createRecoveryFolio(): string {
+  const date = new Date();
+  const datePart = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("");
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, "0");
+  return `ALP-${datePart}-${randomPart}`;
+}
+
+function normalizeRecoveryFolio(value: string): string {
+  return value.trim().replace(/\s+/g, "").toUpperCase();
 }
 
 function personTypeFromKind(kind?: ApplicantKind): PersonType {
@@ -495,6 +736,76 @@ function markIneDocumentFromStart(document: SolicitudDocument, flow: SolicitudFl
   };
 }
 
+function applyCompletedIneProcessing(
+  flow: SolicitudFlowState,
+  onboardingResult: StartOnboardingResult,
+): SolicitudFlowState {
+  const ocrPrefill = applyIneOcrToGeneralData(
+    flow.generalData,
+    onboardingResult.ocr,
+    { replaceFields: flow.ocrPrefillFields },
+  );
+  const currentFiscalIdentity = flow.fiscalIdentity ?? EMPTY_FISCAL_IDENTITY;
+  const ocrFiscalIdentity = fiscalIdentityFromOcr(onboardingResult.ocr);
+  const nextFiscalIdentity = ocrFiscalIdentity.source !== "empty" ? ocrFiscalIdentity : currentFiscalIdentity;
+  const nextGeneralData = ocrPrefill.generalData;
+
+  return saveFlow({
+    ...flow,
+    ineReviewed: true,
+    backendTraceId: onboardingResult.trace_id || flow.backendTraceId,
+    ineOcr: onboardingResult.ocr ?? flow.ineOcr,
+    generalData: nextGeneralData,
+    fiscalIdentity: nextFiscalIdentity,
+    basicData: basicDataFromGeneralData(nextGeneralData, flow.basicData.companyName, nextFiscalIdentity),
+    ocrPrefillFields: ocrPrefill.prefilledFields.length > 0
+      ? Array.from(new Set([...(flow.ocrPrefillFields ?? []), ...ocrPrefill.prefilledFields]))
+      : flow.ocrPrefillFields,
+    ineProcessingStatus: "completed",
+    ineProcessingRequestId: undefined,
+    ineProcessingMessage: undefined,
+    currentStep: flow.currentStep === "revision_ine" ? "datos_basicos" : flow.currentStep,
+  });
+}
+
+function markIneProcessingFailed(flowId: string, requestId: string): void {
+  const latest = readStore().find((item) => item.flowId === flowId);
+  if (!latest || latest.ineProcessingRequestId !== requestId) return;
+  saveFlow({
+    ...latest,
+    ineProcessingStatus: "failed",
+    ineProcessingMessage: "No pudimos terminar de revisar tu identificación. Intenta nuevamente.",
+  });
+}
+
+function finalizeIneProcessing(
+  flowId: string,
+  requestId: string,
+  onboardingResult: StartOnboardingResult,
+): SolicitudFlowState | null {
+  const latest = readStore().find((item) => item.flowId === flowId);
+  if (!latest || latest.ineProcessingRequestId !== requestId) return null;
+  return applyCompletedIneProcessing(latest, onboardingResult);
+}
+
+async function waitForIneProcessing(
+  onboardingPromise: Promise<StartOnboardingResult>,
+): Promise<{ timedOut: true } | { timedOut: false; result: StartOnboardingResult }> {
+  let timeoutId: number | undefined;
+  const timeout = new Promise<{ timedOut: true }>((resolve) => {
+    timeoutId = window.setTimeout(() => resolve({ timedOut: true }), INE_AUTO_CONTINUE_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([
+      onboardingPromise.then((result) => ({ timedOut: false as const, result })),
+      timeout,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+  }
+}
+
 async function addPublicEvent(
   flow: SolicitudFlowState,
   publicEvent: string,
@@ -513,11 +824,16 @@ async function addPublicEvent(
 
 export async function createSolicitudFlow(demoCreditScenario?: DemoCreditScenario): Promise<SolicitudFlowState> {
   const trace = await createTrace({});
-  const now = new Date().toISOString();
+  const createdAt = new Date();
+  const now = createdAt.toISOString();
   const flow: SolicitudFlowState = {
     flowId: createFlowId(),
+    recoveryFolio: createRecoveryFolio(),
+    expiresAt: new Date(createdAt.getTime() + SOLICITUD_RECOVERY_TTL_MS).toISOString(),
     trace_id: trace.trace_id,
     currentStep: "tipo_solicitante",
+    ineProcessingStatus: "idle",
+    ineProcessingRequestId: undefined,
     ineReviewed: false,
     basicData: EMPTY_BASIC_DATA,
     generalData: EMPTY_ONBOARDING_GENERAL_DATA,
@@ -538,7 +854,22 @@ export async function createSolicitudFlow(demoCreditScenario?: DemoCreditScenari
 export async function getSolicitudFlow(flowId: string): Promise<SolicitudFlowState | null> {
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
-  return flow ? structuredClone(normalizeFlow(flow)) : null;
+  return flow ? saveFlow(normalizeFlow(flow)) : null;
+}
+
+export async function getSolicitudFlowByRecoveryFolio(folio: string): Promise<SolicitudFlowState | null> {
+  await wait();
+  const normalizedFolio = normalizeRecoveryFolio(folio);
+  if (!normalizedFolio) return null;
+  const flow = readStore().find((item) =>
+    normalizeRecoveryFolio(item.recoveryFolio ?? "") === normalizedFolio ||
+    normalizeRecoveryFolio(item.folio ?? "") === normalizedFolio,
+  );
+  return flow ? saveFlow(normalizeFlow(flow)) : null;
+}
+
+export function persistSolicitudDraft(flow: SolicitudFlowState): SolicitudFlowState {
+  return saveFlow(normalizeFlow(flow));
 }
 
 export async function updateSolicitudStep(flowId: string, currentStep: SolicitudStep): Promise<SolicitudFlowState> {
@@ -580,10 +911,23 @@ export async function saveIneFile(
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  const [ineFront, ineBack] = await Promise.all([
+    optimizeStoredImage(side === "front" ? file : flow.ineFront),
+    optimizeStoredImage(side === "back" ? file : flow.ineBack),
+  ]);
   const nextFlow = saveFlow({
     ...flow,
-    ineFront: side === "front" ? file : flow.ineFront,
-    ineBack: side === "back" ? file : flow.ineBack,
+    ineFront,
+    ineBack,
+    ineReviewed: false,
+    ineProcessingStatus: "idle",
+    ineProcessingRequestId: undefined,
+    ineProcessingStartedAt: undefined,
+    ineProcessingMessage: undefined,
+    backendTraceId: undefined,
+    ineOcr: undefined,
+    fiscalIdentity: flow.fiscalIdentity?.source === "manual" ? flow.fiscalIdentity : EMPTY_FISCAL_IDENTITY,
+    backendDocumentsLoaded: false,
   });
   await addPublicEvent(
     nextFlow,
@@ -602,38 +946,51 @@ export async function confirmIneReview(flowId: string, accepted: boolean): Promi
   if (accepted && (!flow.ineFront || !flow.ineBack)) {
     throw new Error("No pudimos iniciar la solicitud en este momento. Intenta nuevamente.");
   }
-  const onboardingResult = accepted && flow.ineFront && flow.ineBack
-    ? await startOnboardingFlow({
-        flowId: flow.flowId,
-        applicantKind: flow.applicantKind ?? "physical",
-        ineFront: flow.ineFront,
-        ineBack: flow.ineBack,
-      })
-    : null;
-  const ocrPrefill = applyIneOcrToGeneralData(
-    flow.generalData,
-    onboardingResult?.ocr,
-    { replaceFields: flow.ocrPrefillFields },
-  );
-  const nextGeneralData = accepted ? ocrPrefill.generalData : flow.generalData;
-  const currentFiscalIdentity = flow.fiscalIdentity ?? EMPTY_FISCAL_IDENTITY;
-  const ocrFiscalIdentity = accepted ? fiscalIdentityFromOcr(onboardingResult?.ocr) : currentFiscalIdentity;
-  const nextFiscalIdentity = ocrFiscalIdentity.source !== "empty" ? ocrFiscalIdentity : currentFiscalIdentity;
-  const nextFlow = saveFlow({
+  if (!accepted || !flow.ineFront || !flow.ineBack) {
+    return saveFlow({ ...flow, ineReviewed: false, currentStep: "revision_ine" });
+  }
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const processingFlow = saveFlow({
     ...flow,
-    ineReviewed: accepted,
-    backendTraceId: onboardingResult?.trace_id ?? flow.backendTraceId,
-    ineOcr: onboardingResult?.ocr ?? flow.ineOcr,
-    generalData: nextGeneralData,
-    fiscalIdentity: nextFiscalIdentity,
-    basicData: accepted ? basicDataFromGeneralData(nextGeneralData, flow.basicData.companyName, nextFiscalIdentity) : flow.basicData,
-    ocrPrefillFields: accepted && ocrPrefill.prefilledFields.length > 0
-      ? Array.from(new Set([...(flow.ocrPrefillFields ?? []), ...ocrPrefill.prefilledFields]))
-      : flow.ocrPrefillFields,
-    currentStep: accepted ? "datos_basicos" : "revision_ine",
+    ineReviewed: true,
+    ineProcessingStatus: "processing",
+    ineProcessingRequestId: requestId,
+    ineProcessingStartedAt: new Date().toISOString(),
+    ineProcessingMessage: "Estamos preparando la información de tu identificación.",
   });
+  const onboardingPromise = startOnboardingFlow({
+    flowId: processingFlow.flowId,
+    applicantKind: processingFlow.applicantKind ?? "physical",
+    ineFront: processingFlow.ineFront!,
+    ineBack: processingFlow.ineBack!,
+  });
+
+  let outcome: Awaited<ReturnType<typeof waitForIneProcessing>>;
+  try {
+    outcome = await waitForIneProcessing(onboardingPromise);
+  } catch (processingError) {
+    markIneProcessingFailed(flowId, requestId);
+    throw processingError;
+  }
+
+  let nextFlow: SolicitudFlowState;
+  if (outcome.timedOut) {
+    nextFlow = saveFlow({
+      ...processingFlow,
+      currentStep: "datos_basicos",
+      ineProcessingStatus: "processing",
+      ineProcessingMessage: "Puedes continuar con tus datos mientras terminamos de preparar tu identificación.",
+    });
+    void onboardingPromise
+      .then((result) => finalizeIneProcessing(flowId, requestId, result))
+      .catch(() => markIneProcessingFailed(flowId, requestId));
+  } else {
+    nextFlow = applyCompletedIneProcessing(processingFlow, outcome.result);
+  }
   await addPublicEvent(nextFlow, "ine_revision_visual_confirmada", "Revisión visual de INE confirmada", "revision_ine", {
     accepted,
+    continuedWhileProcessing: outcome.timedOut,
   });
   return nextFlow;
 }
@@ -642,7 +999,15 @@ export async function saveBasicData(flowId: string, generalData: OnboardingGener
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  if (flow.ineProcessingStatus === "processing") {
+    throw new Error("Seguimos preparando tu identificación. Espera unos segundos para continuar.");
+  }
   const normalizedGeneralData = normalizeGeneralDataInput(generalData);
+  const localFlow = { ...flow, generalData: normalizedGeneralData };
+  const issues = generalDataCorrectionIssues(localFlow);
+  if (issues.length > 0) {
+    throw new SolicitudCorrectionError("Revisa los datos marcados antes de continuar.", issues);
+  }
   const response = await saveOnboardingGeneralData(mapGeneralDataToBackendPayload(normalizedGeneralData, backendTraceIdOrThrow(flow)));
   const fiscalIdentity = resolveFiscalIdentityAfterGeneralData({
     response,
@@ -677,13 +1042,24 @@ export async function saveFiscalIdentity(flowId: string, fiscalIdentity: FiscalI
     source: fiscalIdentity.source === "empty" ? "manual" : fiscalIdentity.source,
     confirmed: false,
   });
+  const issues = fiscalIdentityCorrectionIssues({ ...flow, fiscalIdentity: identityToValidate });
+  if (issues.length > 0) {
+    throw new SolicitudCorrectionError("Revisa tus datos de identificación antes de continuar.", issues);
+  }
   const validationResult = await validateFiscalIdentityWithBackend({
     trace_id: backendTraceIdOrThrow(flow),
     rfc: identityToValidate.rfc,
     curp: identityToValidate.curp,
   });
   if (validationResult.validado === false) {
-    throw new Error("No pudimos validar estos datos. Revisa la información e intenta nuevamente.");
+    throw new SolicitudCorrectionError("No pudimos validar los datos de identificación.", [
+      {
+        field: "rfc",
+        label: "RFC",
+        message: "El RFC no coincide con los datos capturados. Revísalo e intenta nuevamente.",
+        step: "fiscal_identity",
+      },
+    ]);
   }
   const normalizedFiscalIdentity = normalizeFiscalIdentity({
     ...identityToValidate,
@@ -1025,15 +1401,23 @@ export async function submitSolicitudFlow(flowId: string): Promise<SolicitudFlow
   await wait();
   const flow = readStore().find((item) => item.flowId === flowId);
   if (!flow) throw new Error("No encontramos esta solicitud.");
+  validateFlowBeforeSubmission(flow);
   if ((flow.applicantKind === "physical" || flow.applicantKind === "company") && !flow.phoneVerified) {
     throw new Error("Necesitamos confirmar tu celular antes de enviar la solicitud.");
   }
   if (!flow.authorizationAccepted) throw new Error("Necesitamos tu autorización para continuar con la solicitud.");
 
-  const bureauConsultation = await consultOnboardingBureau(
-    { trace_id: backendTraceIdOrThrow(flow) },
-    fallbackBureauResultForFlow(flow),
-  );
+  let bureauConsultation: ConsultBureauResult;
+  try {
+    bureauConsultation = await consultOnboardingBureau(
+      { trace_id: backendTraceIdOrThrow(flow) },
+      fallbackBureauResultForFlow(flow),
+    );
+  } catch (consultationError) {
+    const correctionError = finalCorrectionError(consultationError);
+    if (correctionError) throw correctionError;
+    throw consultationError;
+  }
   const creditEvaluation = creditEvaluationFromBureauResult(bureauConsultation);
   const publicCreditResult: PublicCreditResult = bureauConsultation.aprobadoPreliminar ? "approved" : "rejected";
 

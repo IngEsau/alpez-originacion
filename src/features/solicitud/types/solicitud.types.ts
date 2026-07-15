@@ -20,6 +20,17 @@ export type PublicDocumentStatus = "missing" | "uploaded" | "review_pending" | "
 
 export type PublicCreditResult = "approved" | "rejected";
 
+export type IneProcessingStatus = "idle" | "processing" | "completed" | "failed";
+
+export type SolicitudCorrectionStep = "ine" | "datos_basicos" | "fiscal_identity" | "documentos" | "phone_verification";
+
+export interface SolicitudCorrectionIssue {
+  field: string;
+  label: string;
+  message: string;
+  step: SolicitudCorrectionStep;
+}
+
 export type DemoCreditScenario =
   | "pf-rejected-score"
   | "pm-rejected-score"
@@ -132,10 +143,16 @@ export interface PhoneVerificationState {
 
 export interface SolicitudFlowState {
   flowId: string;
+  recoveryFolio: string;
+  expiresAt: string;
   trace_id: string;
   backendTraceId?: string;
   ineOcr?: unknown;
   ocrPrefillFields?: Array<keyof OnboardingGeneralData>;
+  ineProcessingStatus?: IneProcessingStatus;
+  ineProcessingRequestId?: string;
+  ineProcessingStartedAt?: string;
+  ineProcessingMessage?: string;
   folio?: string;
   application_id?: string;
   currentStep: SolicitudStep;
