@@ -3,13 +3,13 @@ import {
   ArrowRight,
   Building2,
   Check,
+  CircleAlert,
   CircleHelp,
   Clock3,
   Eye,
   FileText,
   FileUp,
   Lock,
-  LogIn,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -28,7 +28,9 @@ import {
   confirmIneReview,
   createSolicitudFlow,
   getSolicitudFlow,
+  getSolicitudFlowByRecoveryFolio,
   loadSolicitudRequiredDocuments,
+  persistSolicitudDraft,
   removeDocumentFile,
   saveBasicData,
   saveBusinessData,
@@ -36,6 +38,7 @@ import {
   saveFiscalIdentity,
   saveIneFile,
   sendPhoneVerificationCode,
+  SolicitudCorrectionError,
   startSolicitudProcessing,
   setCollateralChoice,
   setGuarantorChoice,
@@ -50,6 +53,7 @@ import type {
   BusinessData,
   FiscalIdentity,
   OnboardingGeneralData,
+  SolicitudCorrectionIssue,
   SolicitudDocument,
   SolicitudFlowState,
   SolicitudStep,
@@ -60,6 +64,7 @@ import { demoScenarioPersonTypeWarning, parseDemoCreditScenario } from "../featu
 import {
   FALLBACK_STATES,
   isFiscalIdentityComplete,
+  isFiscalIdentityConsistent,
   isGeneralDataComplete,
   mapAddressCatalog,
   mapStatesCatalog,
@@ -70,6 +75,7 @@ import {
   type StateOption,
   toTitleCase,
   validateFiscalIdentity,
+  validateFiscalIdentityConsistency,
   validateGeneralData,
 } from "../features/solicitud/utils/generalData";
 import { Button } from "../shared/components/Button";
@@ -101,12 +107,20 @@ function storedFileFromFile(file: File): Promise<StoredFile> {
     size: file.size,
     previewUrl,
   })).catch(() => {
-    return {
-      name: file.name,
-      type: file.type || "imagen",
-      size: file.size,
-    };
+    throw new Error("No pudimos leer el archivo. Intenta seleccionarlo nuevamente.");
   });
+}
+
+function validateSelectedFile(file: File, imagesOnly = false): string | null {
+  const maxSize = 10 * 1024 * 1024;
+  if (file.size > maxSize) return "El archivo es demasiado grande. Selecciona uno menor a 10 MB.";
+  if (imagesOnly && !file.type.startsWith("image/")) {
+    return "Selecciona una imagen JPG, PNG o HEIC de tu identificación.";
+  }
+  if (!imagesOnly && !file.type.startsWith("image/") && file.type !== "application/pdf") {
+    return "Selecciona una imagen o un archivo PDF.";
+  }
+  return null;
 }
 
 function isImageFile(file?: StoredFile): boolean {
@@ -171,7 +185,13 @@ function canContinueBasicData(flow: SolicitudFlowState): boolean {
 }
 
 function canContinueBusinessData(data: BusinessData): boolean {
-  return Boolean(data.activity.trim() && data.seniorityYears.trim() && data.monthlyIncome.trim());
+  return Boolean(
+    data.activity.trim() &&
+    data.seniorityYears.trim() &&
+    Number(data.seniorityYears) >= 0 &&
+    data.monthlyIncome.trim() &&
+    Number(data.monthlyIncome) > 0,
+  );
 }
 
 function GeneralDataSection({ title, children }: { title: string; children: ReactNode }) {
@@ -199,6 +219,10 @@ function GeneralDataFields({
   zipLoading?: boolean;
 }) {
   const errors = validateGeneralData(value);
+  const today = new Date();
+  const latestAdultBirthDate = new Date(today.getFullYear() - 18, today.getMonth(), today.getDate())
+    .toISOString()
+    .slice(0, 10);
   const patch = (field: keyof OnboardingGeneralData, fieldValue: string | number | null) =>
     onChange({ ...value, [field]: fieldValue });
   const normalizeNameField = (field: keyof Pick<OnboardingGeneralData, "primerNombre" | "segundoNombre" | "apellidoPaterno" | "apellidoMaterno">) =>
@@ -250,6 +274,7 @@ function GeneralDataFields({
             className="h-12 text-base"
             error={errors.fechaNacimiento}
             label="Fecha de nacimiento"
+            max={latestAdultBirthDate}
             type="date"
             value={value.fechaNacimiento}
             onChange={(event) => patch("fechaNacimiento", event.target.value)}
@@ -383,13 +408,17 @@ function GeneralDataFields({
 
 function FiscalIdentityFields({
   value,
+  generalData,
+  onEditGeneralData,
   onChange,
 }: {
   value: FiscalIdentity;
+  generalData: OnboardingGeneralData;
+  onEditGeneralData: () => void;
   onChange: (value: FiscalIdentity) => void;
 }) {
-  const errors = validateFiscalIdentity(value);
-  const patch = (field: "rfc" | "curp", fieldValue: string) =>
+  const errors = { ...validateFiscalIdentity(value), ...validateFiscalIdentityConsistency(value, generalData) };
+  const patch = (field: "rfc", fieldValue: string) =>
     onChange({
       ...value,
       [field]: fieldValue.replace(/[^a-zA-Z0-9]/g, "").toUpperCase(),
@@ -408,13 +437,22 @@ function FiscalIdentityFields({
         onChange={(event) => patch("rfc", event.target.value)}
       />
       <Input
-        className="h-12 text-base"
+        className="h-12 bg-slate-100 text-base text-slate-700"
         error={errors.curp}
+        helperText="La CURP se obtuvo de tu identificación y no puede modificarse en este paso."
         label="CURP"
         maxLength={18}
+        readOnly
         value={value.curp}
-        onChange={(event) => patch("curp", event.target.value)}
       />
+      {errors.estadoNacimientoId && (
+        <div className="rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800 sm:col-span-2">
+          <p className="font-bold">{errors.estadoNacimientoId}</p>
+          <button className="mt-2 font-bold text-[#0F4C81] underline" type="button" onClick={onEditGeneralData}>
+            Corregir estado de nacimiento
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -434,6 +472,7 @@ function BusinessDataFields({
     <div className="grid gap-4">
       <Input
         className="h-12 text-base"
+        helperText={!value.activity.trim() ? "Describe la actividad principal de tu negocio." : undefined}
         label={applicantKind === "company" ? "Giro de la empresa" : "Actividad del negocio"}
         value={value.activity}
         onChange={(event) => patch("activity", event.target.value)}
@@ -441,6 +480,7 @@ function BusinessDataFields({
       <div className="grid gap-4 sm:grid-cols-2">
         <Input
           className="h-12 text-base"
+          error={value.seniorityYears && Number(value.seniorityYears) < 0 ? "Ingresa cero o más años de operación." : undefined}
           label="Años de operación"
           min="0"
           type="number"
@@ -449,6 +489,7 @@ function BusinessDataFields({
         />
         <Input
           className="h-12 text-base"
+          error={value.monthlyIncome && Number(value.monthlyIncome) <= 0 ? "Ingresa un monto mayor a cero." : undefined}
           label="Ingresos mensuales"
           min="0"
           type="number"
@@ -511,7 +552,6 @@ export function SolicitudFlowPage() {
   const [loading, setLoading] = useState(Boolean(flowId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [otherAmount, setOtherAmount] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpSuccessMessage, setOtpSuccessMessage] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
@@ -522,8 +562,45 @@ export function SolicitudFlowPage() {
   const [zipLoading, setZipLoading] = useState(false);
   const [lastZipLookup, setLastZipLookup] = useState("");
   const [showLandingHelp, setShowLandingHelp] = useState(false);
+  const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+  const [recoveryFolioInput, setRecoveryFolioInput] = useState("");
+  const [recoveryError, setRecoveryError] = useState("");
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<StoredFile | null>(null);
+  const [correctionIssues, setCorrectionIssues] = useState<SolicitudCorrectionIssue[]>([]);
   const actionInFlightRef = useRef(false);
+  const flowRef = useRef<SolicitudFlowState | null>(null);
+
+  useEffect(() => {
+    flowRef.current = flow;
+  }, [flow]);
+
+  useEffect(() => {
+    if (!flow || flow.currentStep === "final") return undefined;
+    const timer = window.setTimeout(() => {
+      flowRef.current = persistSolicitudDraft(flow);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [flow]);
+
+  useEffect(() => {
+    const persistCurrentFlow = () => {
+      if (!flowRef.current || flowRef.current.currentStep === "final") return;
+      const saved = persistSolicitudDraft(flowRef.current);
+      flowRef.current = saved;
+      window.dispatchEvent(new CustomEvent("alpez:flow-saved", {
+        detail: { recoveryFolio: saved.recoveryFolio, expiresAt: saved.expiresAt },
+      }));
+    };
+    window.addEventListener("alpez:save-and-exit", persistCurrentFlow);
+    window.addEventListener("pagehide", persistCurrentFlow);
+    window.addEventListener("beforeunload", persistCurrentFlow);
+    return () => {
+      window.removeEventListener("alpez:save-and-exit", persistCurrentFlow);
+      window.removeEventListener("pagehide", persistCurrentFlow);
+      window.removeEventListener("beforeunload", persistCurrentFlow);
+    };
+  }, []);
 
   useEffect(() => {
     if (resendCooldown <= 0) return undefined;
@@ -548,6 +625,39 @@ export function SolicitudFlowPage() {
       })
       .finally(() => setLoading(false));
   }, [flowId]);
+
+  useEffect(() => {
+    if (!flow || flow.ineProcessingStatus !== "processing") return undefined;
+    let active = true;
+    const refresh = () => {
+      void getSolicitudFlow(flow.flowId).then((refreshed) => {
+        if (!active || !refreshed || refreshed.ineProcessingStatus === "processing") return;
+        setFlow((current) => {
+          if (!current || current.flowId !== refreshed.flowId) return refreshed;
+          const generalData = Object.fromEntries(
+            Object.entries(refreshed.generalData).map(([field, refreshedValue]) => {
+              const currentValue = current.generalData[field as keyof OnboardingGeneralData];
+              const hasCurrentValue = currentValue !== null && String(currentValue).trim() !== "";
+              return [field, hasCurrentValue ? currentValue : refreshedValue];
+            }),
+          ) as unknown as OnboardingGeneralData;
+          return {
+            ...refreshed,
+            generalData,
+            fiscalIdentity: current.fiscalIdentity.source === "manual" ? current.fiscalIdentity : refreshed.fiscalIdentity,
+          };
+        });
+        if (refreshed.ineProcessingStatus === "failed") {
+          setError(refreshed.ineProcessingMessage ?? "No pudimos terminar de revisar tu identificación. Intenta nuevamente.");
+        }
+      });
+    };
+    const interval = window.setInterval(refresh, 900);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [flow?.flowId, flow?.ineProcessingStatus]);
 
   useEffect(() => {
     if (!flow || flow.currentStep !== "documentos" || flow.backendDocumentsLoaded) return;
@@ -627,12 +737,26 @@ export function SolicitudFlowPage() {
     actionInFlightRef.current = true;
     setSaving(true);
     setError(null);
+    setCorrectionIssues([]);
     try {
       return await action();
     } finally {
       actionInFlightRef.current = false;
       setSaving(false);
     }
+  };
+
+  const handleFlowError = (actionError: unknown, fallback: string) => {
+    if (actionError instanceof SolicitudCorrectionError) {
+      setCorrectionIssues(actionError.issues);
+      const issueDetail = actionError.issues.map((issue) => issue.message).join(" ");
+      setError(flowRef.current?.currentStep === "processing"
+        ? actionError.message
+        : `${actionError.message} ${issueDetail}`.trim());
+      return;
+    }
+    setCorrectionIssues([]);
+    setError(actionError instanceof Error ? actionError.message : fallback);
   };
 
   const runAction = async (action: () => Promise<SolicitudFlowState>, redirect?: string) => {
@@ -642,7 +766,7 @@ export function SolicitudFlowPage() {
       setFlow(nextFlow);
       if (redirect) navigate(redirect);
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "No pudimos guardar este paso.");
+      handleFlowError(actionError, "No pudimos guardar este paso.");
     }
   };
 
@@ -670,7 +794,30 @@ export function SolicitudFlowPage() {
     try {
       await withActionLock(() => processAndSubmitSolicitudCore(targetFlowId));
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
+      handleFlowError(actionError, "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
+    }
+  }
+
+  async function recoverSolicitud() {
+    const folio = recoveryFolioInput.trim();
+    if (!folio) {
+      setRecoveryError("Ingresa el folio que recibiste al guardar tu solicitud.");
+      return;
+    }
+    setRecoveryLoading(true);
+    setRecoveryError("");
+    try {
+      const recovered = await getSolicitudFlowByRecoveryFolio(folio);
+      if (!recovered) {
+        setRecoveryError("No encontramos tu solicitud. El folio puede haber vencido; puedes generar una nueva.");
+        return;
+      }
+      setShowRecoveryDialog(false);
+      navigate(recovered.currentStep === "final"
+        ? `/solicitud/${recovered.flowId}/final`
+        : `/solicitud/${recovered.flowId}`);
+    } finally {
+      setRecoveryLoading(false);
     }
   }
 
@@ -714,15 +861,6 @@ export function SolicitudFlowPage() {
                 <CircleHelp className="h-5 w-5" />
                 Ayuda
               </button>
-              <Button
-                className="h-12 rounded-[12px] border-[#0F4C81] px-4 text-[#062B52] hover:bg-[#F3F8FD] sm:px-6"
-                icon={<LogIn className="h-4 w-4" />}
-                type="button"
-                variant="outline"
-                onClick={() => navigate("/login")}
-              >
-                Soy un agente / Entrar al panel
-              </Button>
             </div>
           </div>
         </header>
@@ -757,7 +895,10 @@ export function SolicitudFlowPage() {
                     size="lg"
                     type="button"
                     variant="outline"
-                    onClick={() => setShowLandingHelp(true)}
+                    onClick={() => {
+                      setRecoveryError("");
+                      setShowRecoveryDialog(true);
+                    }}
                   >
                     Ya tengo una solicitud
                   </Button>
@@ -818,6 +959,42 @@ export function SolicitudFlowPage() {
             </div>
           </div>
         )}
+        {showRecoveryDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+            <form
+              className="w-full max-w-md rounded-[18px] border border-slate-200 bg-white p-6 shadow-2xl"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void recoverSolicitud();
+              }}
+            >
+              <h2 className="text-2xl font-bold text-slate-950">Continúa tu solicitud</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Ingresa el folio de recuperación que guardaste durante el proceso.
+              </p>
+              <Input
+                autoFocus
+                className="mt-5 h-12 text-base uppercase"
+                error={recoveryError || undefined}
+                label="Folio de recuperación"
+                placeholder="ALP-20260715-ABC123"
+                value={recoveryFolioInput}
+                onChange={(event) => {
+                  setRecoveryError("");
+                  setRecoveryFolioInput(event.target.value.toUpperCase());
+                }}
+              />
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <Button type="button" variant="ghost" onClick={() => setShowRecoveryDialog(false)}>
+                  Cancelar
+                </Button>
+                <Button loading={recoveryLoading} type="submit">
+                  Continuar solicitud
+                </Button>
+              </div>
+            </form>
+          </div>
+        )}
       </section>
     );
   }
@@ -847,6 +1024,7 @@ export function SolicitudFlowPage() {
 
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title="¿Quién solicita el crédito?"
@@ -880,6 +1058,7 @@ export function SolicitudFlowPage() {
 
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title="Sube una foto de tu INE"
@@ -921,7 +1100,7 @@ export function SolicitudFlowPage() {
               <span className="mt-2 text-sm text-slate-500">{item.file ? item.file.name : "Toca para agregar archivo"}</span>
               <FilePreview file={item.file} />
               <input
-                accept="image/*,.pdf"
+                accept="image/*"
                 aria-label={`Agregar ${item.title}`}
                 className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
                 type="file"
@@ -929,9 +1108,14 @@ export function SolicitudFlowPage() {
                   const file = event.target.files?.[0];
                   if (!file) return;
                   event.currentTarget.value = "";
+                  const fileError = validateSelectedFile(file, true);
+                  if (fileError) {
+                    setError(fileError);
+                    return;
+                  }
                   void storedFileFromFile(file).then((storedFile) =>
                     runAction(() => saveIneFile(flow.flowId, item.key as "front" | "back", storedFile)),
-                  );
+                  ).catch((fileReadError) => handleFlowError(fileReadError, "No pudimos leer el archivo."));
                 }}
               />
             </label>
@@ -944,6 +1128,7 @@ export function SolicitudFlowPage() {
   if (flow.currentStep === "revision_ine") {
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title="Revisa que tu INE se vea bien"
@@ -966,13 +1151,6 @@ export function SolicitudFlowPage() {
             >
               Sí, se ve bien
             </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => runAction(() => confirmIneReview(flow.flowId, true))}
-            >
-              Continuar de todos modos
-            </Button>
           </>
         }
       >
@@ -983,6 +1161,12 @@ export function SolicitudFlowPage() {
               <span>{item}</span>
             </div>
           ))}
+          {saving && (
+            <div className="flex items-start gap-3 rounded-[8px] bg-[#F5FAFF] p-4 text-sm leading-6 text-slate-700">
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[#0F4C81]" />
+              <p>Estamos preparando tu información. Si tarda más de lo esperado, avanzaremos automáticamente para que puedas continuar.</p>
+            </div>
+          )}
         </div>
       </QuestionScreen>
     );
@@ -991,8 +1175,11 @@ export function SolicitudFlowPage() {
   if (flow.currentStep === "datos_basicos") {
     const hasOcrPrefill = Boolean(flow.ocrPrefillFields?.length);
     const generalData = flow.generalData;
+    const ineStillProcessing = flow.ineProcessingStatus === "processing";
+    const ineProcessingFailed = flow.ineProcessingStatus === "failed";
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title={flow.applicantKind === "company" ? "Datos del representante legal" : "Cuéntanos sobre ti"}
@@ -1008,7 +1195,7 @@ export function SolicitudFlowPage() {
               Atrás
             </Button>
             <Button
-              disabled={!canContinueBasicData(flow)}
+              disabled={!canContinueBasicData(flow) || ineStillProcessing || ineProcessingFailed}
               icon={<ArrowRight className="h-4 w-4" />}
               loading={saving}
               size="lg"
@@ -1020,6 +1207,24 @@ export function SolicitudFlowPage() {
           </>
         }
       >
+        {ineStillProcessing && (
+          <div className="mb-4 flex items-start gap-3 rounded-[8px] bg-[#F5FAFF] px-4 py-3 text-sm leading-6 text-slate-700">
+            <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[#0F4C81]" />
+            <div>
+              <p className="font-bold text-slate-950">Puedes completar tus datos mientras terminamos la revisión.</p>
+              <p>El botón Continuar se habilitará automáticamente cuando esté lista.</p>
+            </div>
+          </div>
+        )}
+        {ineProcessingFailed && (
+          <div className="mb-4 rounded-[8px] bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+            <p className="font-bold">No pudimos terminar de revisar tu identificación.</p>
+            <p>Tu información capturada se conserva. Intenta nuevamente para continuar.</p>
+            <Button className="mt-3" loading={saving} size="sm" type="button" variant="outline" onClick={() => runAction(() => confirmIneReview(flow.flowId, true))}>
+              Reintentar revisión
+            </Button>
+          </div>
+        )}
         {hasOcrPrefill && (
           <p className="mb-4 rounded-[8px] bg-[#F5FAFF] px-4 py-3 text-sm leading-6 text-slate-600">
             Prellenamos algunos datos desde tu identificación. Puedes revisarlos y corregirlos si es necesario.
@@ -1040,9 +1245,12 @@ export function SolicitudFlowPage() {
   if (flow.currentStep === "fiscal_identity") {
     const hasPrefill = flow.fiscalIdentity.source === "backend" || flow.fiscalIdentity.source === "ocr";
     const isEmpty = !flow.fiscalIdentity.rfc && !flow.fiscalIdentity.curp;
+    const identityIsConsistent = isFiscalIdentityConsistent(flow.fiscalIdentity, flow.generalData);
+    const identityErrors = validateFiscalIdentity(flow.fiscalIdentity);
 
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title={flow.applicantKind === "company" ? "Confirma los datos fiscales del representante" : "Confirma tu RFC y CURP"}
@@ -1058,7 +1266,7 @@ export function SolicitudFlowPage() {
               Atrás
             </Button>
             <Button
-              disabled={!isFiscalIdentityComplete(flow.fiscalIdentity)}
+              disabled={!isFiscalIdentityComplete(flow.fiscalIdentity) || !identityIsConsistent}
               icon={<ArrowRight className="h-4 w-4" />}
               loading={saving}
               size="lg"
@@ -1081,9 +1289,19 @@ export function SolicitudFlowPage() {
           </p>
         )}
         <FiscalIdentityFields
+          generalData={flow.generalData}
           value={flow.fiscalIdentity}
+          onEditGeneralData={() => runAction(() => updateSolicitudStep(flow.flowId, "datos_basicos"))}
           onChange={(fiscalIdentity) => setFlow({ ...flow, fiscalIdentity })}
         />
+        {identityErrors.curp && (
+          <div className="mt-4 rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+            <p>La CURP proviene de tu identificación. Para corregirla, vuelve a cargar las imágenes de tu INE.</p>
+            <Button className="mt-3" size="sm" type="button" variant="outline" onClick={() => runAction(() => updateSolicitudStep(flow.flowId, "ine"))}>
+              Volver a cargar mi INE
+            </Button>
+          </div>
+        )}
       </QuestionScreen>
     );
   }
@@ -1091,6 +1309,7 @@ export function SolicitudFlowPage() {
   if (flow.currentStep === "datos_negocio") {
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title={flow.applicantKind === "company" ? "Cuéntanos sobre la empresa" : "Cuéntanos sobre tu negocio"}
@@ -1163,8 +1382,16 @@ export function SolicitudFlowPage() {
         (document.backendGroup === "solicitante" && backendKey.includes("ine"))
       );
     };
-    const saveFile = (document: SolicitudDocument, file: File) =>
-      storedFileFromFile(file).then((storedFile) => runAction(() => saveDocumentFile(flow.flowId, document.id, storedFile)));
+    const saveFile = (document: SolicitudDocument, file: File) => {
+      const fileError = validateSelectedFile(file);
+      if (fileError) {
+        setError(fileError);
+        return;
+      }
+      void storedFileFromFile(file)
+        .then((storedFile) => runAction(() => saveDocumentFile(flow.flowId, document.id, storedFile)))
+        .catch((fileReadError) => handleFlowError(fileReadError, "No pudimos leer el archivo."));
+    };
     const renderDocumentCard = (document: SolicitudDocument) => {
       const hasFile = Boolean(document.file);
 
@@ -1203,7 +1430,8 @@ export function SolicitudFlowPage() {
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (!file) return;
-                    void saveFile(document, file);
+                    event.currentTarget.value = "";
+                    saveFile(document, file);
                   }}
                 />
               </label>
@@ -1322,6 +1550,7 @@ export function SolicitudFlowPage() {
 
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title="Completa tus documentos"
@@ -1477,6 +1706,7 @@ export function SolicitudFlowPage() {
 
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title="Verifica tu celular"
@@ -1584,7 +1814,6 @@ export function SolicitudFlowPage() {
                 {otpSuccessMessage}
               </div>
             )}
-            {error && <p className="text-center text-sm font-semibold text-red-600">{error}</p>}
             {verification.attempts >= 5 && !verification.codeVerified && (
               <p className="rounded-[8px] bg-amber-50 p-4 text-sm leading-6 text-amber-800">
                 Has intentado varias veces. Puedes reenviar el código o pedir ayuda.
@@ -1609,12 +1838,13 @@ export function SolicitudFlowPage() {
           await processAndSubmitSolicitudCore(authorizedFlow.flowId);
         });
       } catch (actionError) {
-        setError(actionError instanceof Error ? actionError.message : "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
+        handleFlowError(actionError, "No fue posible completar la evaluación en este momento. Intenta nuevamente.");
       }
     };
 
     return (
       <QuestionScreen
+        feedback={error ?? undefined}
         step={stepNumber}
         totalSteps={TOTAL_STEPS}
         title="Autorización para revisar tu información"
@@ -1656,12 +1886,22 @@ export function SolicitudFlowPage() {
             Autorizo que mi información sea revisada para continuar con la evaluación de mi solicitud.
           </span>
         </label>
-        {error && <p className="mt-3 text-sm font-semibold text-red-600">{error}</p>}
       </QuestionScreen>
     );
   }
 
   if (flow.currentStep === "processing") {
+    const correctionSteps = Array.from(new Map(
+      correctionIssues.map((issue) => [issue.step, issue]),
+    ).values());
+    const resumedReviewPending = !saving && !error;
+    const processingFeedback = error ?? (resumedReviewPending
+      ? "Tu información está completa y guardada. Reintenta la revisión para continuar."
+      : null);
+    const hasCorrectionIssues = correctionIssues.length > 0;
+    const displayedProcessingIndex = processingFeedback
+      ? processingMessages.length - 1
+      : processingIndex;
     return (
       <QuestionScreen
         step={stepNumber}
@@ -1674,13 +1914,15 @@ export function SolicitudFlowPage() {
             <div
               className={cx(
                 "flex items-center gap-3 rounded-[8px] p-4 text-sm font-semibold transition",
-                index <= processingIndex ? "bg-[#F5FAFF] text-[#0F4C81]" : "bg-slate-50 text-slate-400",
+                index <= displayedProcessingIndex ? "bg-[#F5FAFF] text-[#0F4C81]" : "bg-slate-50 text-slate-400",
               )}
               key={message}
             >
-              {index < processingIndex ? (
+              {processingFeedback && index === displayedProcessingIndex ? (
+                <CircleAlert className="h-5 w-5 text-amber-600" />
+              ) : index < displayedProcessingIndex ? (
                 <Check className="h-5 w-5 text-emerald-600" />
-              ) : index === processingIndex ? (
+              ) : index === displayedProcessingIndex ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : (
                 <span className="h-5 w-5 rounded-full border border-slate-300" />
@@ -1689,12 +1931,66 @@ export function SolicitudFlowPage() {
             </div>
           ))}
         </div>
-        {error && (
-          <div className="mt-4 grid gap-3 text-center">
-            <p className="text-sm font-semibold text-red-600">{error}</p>
-            <Button loading={saving} type="button" variant="outline" onClick={() => void processAndSubmitSolicitud(flow.flowId)}>
-              Intentar nuevamente
-            </Button>
+        {processingFeedback && (
+          <div
+            className={cx(
+              "mt-5 rounded-[8px] border p-5",
+              hasCorrectionIssues
+                ? "border-red-200 bg-red-50"
+                : "border-amber-200 bg-amber-50",
+            )}
+            role="alert"
+          >
+            <h2 className={cx(
+              "text-lg font-bold",
+              hasCorrectionIssues ? "text-red-800" : "text-amber-900",
+            )}>
+              {hasCorrectionIssues
+                ? "Necesitamos corregir algunos datos"
+                : resumedReviewPending
+                  ? "Tu revisión quedó pendiente"
+                  : "La revisión está tardando más de lo esperado"}
+            </h2>
+            <p className={cx(
+              "mt-1 text-sm leading-6",
+              hasCorrectionIssues ? "text-red-700" : "text-amber-800",
+            )}>
+              {processingFeedback}
+            </p>
+            {hasCorrectionIssues ? (
+              <>
+                <ul className="mt-4 grid gap-2 text-left text-sm text-red-800">
+                  {correctionIssues.map((issue) => (
+                    <li className="rounded-[8px] bg-white/80 px-3 py-2" key={`${issue.step}-${issue.field}`}>
+                      <strong>{issue.label}:</strong> {issue.message}
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  {correctionSteps.map((issue) => (
+                    <Button
+                      key={issue.step}
+                      type="button"
+                      variant="outline"
+                      onClick={() => runAction(() => updateSolicitudStep(flow.flowId, issue.step))}
+                    >
+                      Corregir {issue.label}
+                    </Button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                {!resumedReviewPending && (
+                  <p className="mt-2 text-sm leading-6 text-amber-800">
+                    Tu información quedó guardada y no necesitas volver a capturarla.
+                  </p>
+                )}
+                <Button className="mt-4" loading={saving} type="button" variant="outline" onClick={() => void processAndSubmitSolicitud(flow.flowId)}>
+                  Reintentar revisión
+                </Button>
+              </>
+            )}
           </div>
         )}
       </QuestionScreen>
@@ -1703,6 +1999,7 @@ export function SolicitudFlowPage() {
 
   return (
     <QuestionScreen
+      feedback={error ?? undefined}
       step={stepNumber}
       totalSteps={TOTAL_STEPS}
       title="Continuemos con tu solicitud"

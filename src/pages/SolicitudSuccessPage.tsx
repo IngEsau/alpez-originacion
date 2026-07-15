@@ -15,23 +15,45 @@ export function SolicitudSuccessPage() {
   const navigate = useNavigate();
   const { flowId } = useParams();
   const [flow, setFlow] = useState<SolicitudFlowState | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!flowId) return;
-    void getSolicitudFlow(flowId).then(async (result) => {
-      setFlow(result);
-      if (result?.publicCreditResult && !result.publicResultDisplayedAt) {
-        setFlow(await markPublicResultDisplayed(flowId));
-      }
-    });
+    if (!flowId) {
+      setLoading(false);
+      return;
+    }
+    void getSolicitudFlow(flowId)
+      .then(async (result) => {
+        setFlow(result);
+        if (result?.publicCreditResult && !result.publicResultDisplayedAt) {
+          setFlow(await markPublicResultDisplayed(flowId));
+        }
+      })
+      .finally(() => setLoading(false));
   }, [flowId]);
 
-  if (!flow) {
+  if (loading) {
     return (
       <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
         <ProgressBar current={11} total={11} />
         <div className="rounded-[8px] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
           <p className="font-semibold text-slate-600">Cargando resultado</p>
+        </div>
+      </section>
+    );
+  }
+
+  if (!flow) {
+    return (
+      <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
+        <div className="rounded-[8px] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
+          <h1 className="text-3xl font-bold text-slate-950">No encontramos tu solicitud</h1>
+          <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-600">
+            El folio puede haber vencido. Puedes volver al inicio y generar una nueva solicitud.
+          </p>
+          <Button className="mt-6" icon={<ArrowLeft className="h-4 w-4" />} type="button" variant="outline" onClick={() => navigate("/")}>
+            Volver al inicio
+          </Button>
         </div>
       </section>
     );
