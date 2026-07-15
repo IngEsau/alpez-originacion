@@ -75,7 +75,8 @@ describe("applyIneOcrToGeneralData", () => {
     expect(result.generalData.apellidoMaterno).toBe("Ruiz");
     expect(result.generalData.telefono).toBe("");
     expect(result.generalData.correo).toBe("");
-    expect(result.prefilledFields).toEqual(["primerNombre", "apellidoPaterno", "apellidoMaterno"]);
+    expect(result.generalData.estadoNacimientoId).toBe(21);
+    expect(result.prefilledFields).toEqual(["primerNombre", "apellidoPaterno", "apellidoMaterno", "estadoNacimientoId"]);
   });
 
   it("does not overwrite user-entered values", () => {

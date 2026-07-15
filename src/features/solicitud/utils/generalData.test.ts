@@ -9,8 +9,10 @@ import {
   normalizeGeneralDataInput,
   normalizeFiscalIdentity,
   resolveFiscalIdentityAfterGeneralData,
+  stateIdFromCurp,
   validateGeneralData,
   validateFiscalIdentity,
+  validateFiscalIdentityConsistency,
 } from "./generalData";
 
 const completeGeneralData = {
@@ -92,6 +94,13 @@ describe("validateGeneralData", () => {
       fechaNacimiento: "2999-01-01",
     }).fechaNacimiento).toBe("La fecha de nacimiento debe ser anterior a hoy.");
   });
+
+  it("requires the applicant to be at least 18 years old", () => {
+    expect(validateGeneralData({
+      ...completeGeneralData,
+      fechaNacimiento: "2010-01-01",
+    }).fechaNacimiento).toBe("Debes tener al menos 18 años para solicitar una línea de crédito.");
+  });
 });
 
 describe("fiscal identity", () => {
@@ -148,6 +157,22 @@ describe("fiscal identity", () => {
       rfc: "Revisa que el RFC tenga el formato correcto.",
       curp: "Revisa que la CURP tenga 18 caracteres.",
     });
+  });
+
+  it("checks RFC and CURP against birth date, gender and birth state", () => {
+    const identity = {
+      rfc: "GAGE950615GT1",
+      curp: "GAGE950615HPLNYR01",
+      source: "backend" as const,
+      confirmed: false,
+    };
+
+    expect(validateFiscalIdentityConsistency(identity, completeGeneralData)).toEqual({});
+    expect(validateFiscalIdentityConsistency(identity, {
+      ...completeGeneralData,
+      estadoNacimientoId: 14,
+    }).estadoNacimientoId).toBe("El estado de nacimiento no coincide con la CURP de tu identificación.");
+    expect(stateIdFromCurp(identity.curp)).toBe(21);
   });
 });
 

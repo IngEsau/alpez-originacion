@@ -51,14 +51,56 @@ export const EMPTY_FISCAL_IDENTITY: FiscalIdentity = {
 
 export const FALLBACK_STATES: StateOption[] = [
   { id: "1", name: "Aguascalientes" },
+  { id: "2", name: "Baja California" },
+  { id: "3", name: "Baja California Sur" },
+  { id: "4", name: "Campeche" },
+  { id: "5", name: "Coahuila" },
+  { id: "6", name: "Colima" },
+  { id: "7", name: "Chiapas" },
+  { id: "8", name: "Chihuahua" },
   { id: "9", name: "Ciudad de México" },
+  { id: "10", name: "Durango" },
+  { id: "11", name: "Guanajuato" },
+  { id: "12", name: "Guerrero" },
+  { id: "13", name: "Hidalgo" },
   { id: "14", name: "Jalisco" },
   { id: "15", name: "Estado de México" },
+  { id: "16", name: "Michoacán" },
+  { id: "17", name: "Morelos" },
+  { id: "18", name: "Nayarit" },
   { id: "19", name: "Nuevo León" },
+  { id: "20", name: "Oaxaca" },
   { id: "21", name: "Puebla" },
   { id: "22", name: "Querétaro" },
+  { id: "23", name: "Quintana Roo" },
+  { id: "24", name: "San Luis Potosí" },
+  { id: "25", name: "Sinaloa" },
+  { id: "26", name: "Sonora" },
+  { id: "27", name: "Tabasco" },
+  { id: "28", name: "Tamaulipas" },
+  { id: "29", name: "Tlaxcala" },
   { id: "30", name: "Veracruz" },
+  { id: "31", name: "Yucatán" },
+  { id: "32", name: "Zacatecas" },
+  { id: "33", name: "Nacido en el extranjero" },
 ];
+
+const CURP_STATE_CODE_BY_ID: Record<number, string> = {
+  1: "AS", 2: "BC", 3: "BS", 4: "CC", 5: "CL", 6: "CM", 7: "CS", 8: "CH",
+  9: "DF", 10: "DG", 11: "GT", 12: "GR", 13: "HG", 14: "JC", 15: "MC", 16: "MN",
+  17: "MS", 18: "NT", 19: "NL", 20: "OC", 21: "PL", 22: "QT", 23: "QR", 24: "SP",
+  25: "SL", 26: "SR", 27: "TC", 28: "TS", 29: "TL", 30: "VZ", 31: "YN", 32: "ZS", 33: "NE",
+};
+
+const CURP_STATE_ID_BY_CODE = Object.fromEntries(
+  Object.entries(CURP_STATE_CODE_BY_ID).map(([id, code]) => [code, Number(id)]),
+) as Record<string, number>;
+
+export function stateIdFromCurp(curp: string | undefined): number | undefined {
+  const normalized = cleanIdentityCode(curp ?? "");
+  if (normalized.length !== 18) return undefined;
+  return CURP_STATE_ID_BY_CODE[normalized.slice(11, 13)];
+}
 
 export function onlyDigits(value: string): string {
   return value.replace(/\D/g, "");
@@ -189,6 +231,11 @@ export function validateGeneralData(data: OnboardingGeneralData): Partial<Record
       errors.fechaNacimiento = "Selecciona una fecha de nacimiento válida.";
     } else if (birthDate >= todayStart) {
       errors.fechaNacimiento = "La fecha de nacimiento debe ser anterior a hoy.";
+    } else {
+      const adultDate = new Date(todayStart.getFullYear() - 18, todayStart.getMonth(), todayStart.getDate());
+      if (birthDate > adultDate) {
+        errors.fechaNacimiento = "Debes tener al menos 18 años para solicitar una línea de crédito.";
+      }
     }
   }
   if (!normalized.genero) errors.genero = "Selecciona una opción.";
@@ -219,11 +266,13 @@ export function validateFiscalIdentity(fiscalIdentity: FiscalIdentity): Partial<
   const normalized = normalizeFiscalIdentity(fiscalIdentity);
   const errors: Partial<Record<"rfc" | "curp", string>> = {};
 
-  if (normalized.rfc.length < 12 || normalized.rfc.length > 13) {
+  if (!/^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/.test(normalized.rfc)) {
     errors.rfc = "Revisa que el RFC tenga el formato correcto.";
   }
-  if (normalized.curp.length !== 18) {
-    errors.curp = "Revisa que la CURP tenga 18 caracteres.";
+  if (!/^[A-Z][AEIOUX][A-Z]{2}\d{6}[HM][A-Z]{2}[B-DF-HJ-NP-TV-Z]{3}[A-Z0-9]\d$/.test(normalized.curp)) {
+    errors.curp = normalized.curp.length === 18
+      ? "Revisa que la CURP tenga el formato correcto."
+      : "Revisa que la CURP tenga 18 caracteres.";
   }
 
   return errors;
@@ -231,6 +280,45 @@ export function validateFiscalIdentity(fiscalIdentity: FiscalIdentity): Partial<
 
 export function isFiscalIdentityComplete(fiscalIdentity: FiscalIdentity): boolean {
   return Object.keys(validateFiscalIdentity(fiscalIdentity)).length === 0;
+}
+
+export function validateFiscalIdentityConsistency(
+  fiscalIdentity: FiscalIdentity,
+  generalData: OnboardingGeneralData,
+): Partial<Record<"rfc" | "curp" | "estadoNacimientoId", string>> {
+  const fiscal = normalizeFiscalIdentity(fiscalIdentity);
+  const general = normalizeGeneralDataInput(generalData);
+  const errors: Partial<Record<"rfc" | "curp" | "estadoNacimientoId", string>> = {};
+  const expectedDate = general.fechaNacimiento.replace(/-/g, "").slice(2);
+
+  if (expectedDate.length === 6 && fiscal.rfc.length === 13 && fiscal.rfc.slice(4, 10) !== expectedDate) {
+    errors.rfc = "El RFC no coincide con la fecha de nacimiento capturada.";
+  }
+  if (expectedDate.length === 6 && fiscal.curp.length === 18 && fiscal.curp.slice(4, 10) !== expectedDate) {
+    errors.curp = "La CURP no coincide con la fecha de nacimiento capturada.";
+  }
+  const curpGender = fiscal.curp.slice(10, 11);
+  const expectedGender = general.genero === "M" ? "H" : general.genero === "F" ? "M" : "";
+  if (expectedGender && curpGender && curpGender !== expectedGender) {
+    errors.curp = "La CURP no coincide con el género capturado.";
+  }
+
+  const expectedStateCode = general.estadoNacimientoId
+    ? CURP_STATE_CODE_BY_ID[Number(general.estadoNacimientoId)]
+    : undefined;
+  const curpStateCode = fiscal.curp.slice(11, 13);
+  if (expectedStateCode && curpStateCode && expectedStateCode !== curpStateCode) {
+    errors.estadoNacimientoId = "El estado de nacimiento no coincide con la CURP de tu identificación.";
+  }
+
+  return errors;
+}
+
+export function isFiscalIdentityConsistent(
+  fiscalIdentity: FiscalIdentity,
+  generalData: OnboardingGeneralData,
+): boolean {
+  return Object.keys(validateFiscalIdentityConsistency(fiscalIdentity, generalData)).length === 0;
 }
 
 function readNestedRecord(source: unknown, path: string[]): unknown {

@@ -1,5 +1,12 @@
 import type { FiscalIdentity, OnboardingGeneralData } from "../types/solicitud.types";
-import { EMPTY_ONBOARDING_GENERAL_DATA, normalizeGeneralDataInput, normalizeFiscalIdentity, toTitleCase } from "./generalData";
+import {
+  EMPTY_ONBOARDING_GENERAL_DATA,
+  FALLBACK_STATES,
+  normalizeGeneralDataInput,
+  normalizeFiscalIdentity,
+  stateIdFromCurp,
+  toTitleCase,
+} from "./generalData";
 
 export { toTitleCase } from "./generalData";
 
@@ -93,6 +100,14 @@ function extractZipCode(...values: Array<string | undefined>): string | undefine
   return undefined;
 }
 
+function stateIdFromText(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) return Number(value);
+  const normalized = normalizeKey(value).replace(/_/g, "");
+  const state = FALLBACK_STATES.find((item) => normalizeKey(item.name).replace(/_/g, "") === normalized);
+  return state ? Number(state.id) : undefined;
+}
+
 export function mapIneOcrToGeneralData(ocr: unknown): Partial<OnboardingGeneralData> {
   const firstName = cleanText(findValueByAliases(ocr, KEY_ALIASES.firstName));
   const middleName = cleanText(findValueByAliases(ocr, KEY_ALIASES.middleName));
@@ -125,13 +140,14 @@ export function mapIneOcrToGeneralData(ocr: unknown): Partial<OnboardingGeneralD
   const municipality = cleanText(findValueByAliases(ocr, KEY_ALIASES.municipality));
   const neighborhood = cleanText(findValueByAliases(ocr, KEY_ALIASES.neighborhood));
   const zipCode = rawZipCode || extractZipCode(neighborhood, address);
+  const birthStateId = stateIdFromCurp(curp) ?? stateIdFromText(state);
 
   if (birthDate) result.fechaNacimiento = birthDate;
   if (gender) result.genero = gender;
   if (address) result.direccion = toTitleCase(address);
   if (zipCode) result.codigoPostal = zipCode;
+  if (birthStateId) result.estadoNacimientoId = birthStateId;
   if (state && /^\d+$/.test(state)) {
-    result.estadoNacimientoId = Number(state);
     result.estadoId = state;
   } else if (state) {
     result.estadoNombre = toTitleCase(state);
