@@ -2,6 +2,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Building2,
+  Camera,
   Check,
   CircleAlert,
   CircleHelp,
@@ -9,6 +10,7 @@ import {
   Eye,
   FileText,
   FileUp,
+  ImagePlus,
   Lock,
   Loader2,
   MessageSquare,
@@ -18,7 +20,7 @@ import {
   User,
   UserRound,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ChangeEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChoiceCard } from "../features/solicitud/components/ChoiceCard";
@@ -166,7 +168,7 @@ function FilePreview({ file }: { file?: StoredFile }) {
     return (
       <img
         alt={file.name}
-        className="mt-3 h-28 w-full rounded-[8px] border border-slate-200 object-cover"
+        className="mt-3 h-36 w-full rounded-[8px] border border-slate-200 object-cover sm:h-28"
         src={file.previewUrl}
       />
     );
@@ -177,6 +179,99 @@ function FilePreview({ file }: { file?: StoredFile }) {
       <FileText className="h-5 w-5 text-[#0F4C81]" />
       <span>Archivo agregado</span>
     </div>
+  );
+}
+
+function IneUploadCard({
+  title,
+  file,
+  disabled = false,
+  onSelect,
+}: {
+  title: string;
+  file?: StoredFile;
+  disabled?: boolean;
+  onSelect: (file: File) => void;
+}) {
+  const handleSelection = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (selectedFile) onSelect(selectedFile);
+  };
+
+  return (
+    <article
+      className={cx(
+        "relative flex min-h-48 min-w-0 flex-col overflow-hidden rounded-[8px] border-2 border-dashed border-slate-300 bg-slate-50 p-4 text-center transition md:min-h-52 md:items-center md:justify-center md:p-5 md:hover:border-[#0F4C81] md:hover:bg-[#F5FAFF]",
+        disabled && "opacity-60",
+      )}
+    >
+      <FileUp className="mx-auto mb-3 h-8 w-8 shrink-0 text-[#0F4C81]" />
+      <h2 className="text-base font-bold text-slate-950">{title}</h2>
+      {file ? (
+        <p className="mt-2 break-words text-sm leading-5 text-slate-500">{file.name}</p>
+      ) : (
+        <>
+          <p className="mt-2 break-words text-sm leading-5 text-slate-500 md:hidden">
+            Toma una foto o elige una imagen guardada
+          </p>
+          <p className="mt-2 hidden break-words text-sm leading-5 text-slate-500 md:block">
+            Selecciona una imagen guardada en tu dispositivo
+          </p>
+        </>
+      )}
+      <FilePreview file={file} />
+
+      <div className="relative z-20 mt-4 grid w-full grid-cols-2 gap-2 md:hidden">
+        <label
+          className={cx(
+            "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-[#0F4C81] px-2.5 text-xs font-semibold text-white",
+            disabled && "pointer-events-none",
+          )}
+        >
+          <Camera className="h-4 w-4 shrink-0" />
+          <span>{file ? "Tomar otra" : "Tomar foto"}</span>
+          <input
+            accept="image/*"
+            aria-label={`Tomar foto de ${title}`}
+            capture="environment"
+            className="sr-only"
+            disabled={disabled}
+            type="file"
+            onChange={handleSelection}
+          />
+        </label>
+        <label
+          className={cx(
+            "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700",
+            disabled && "pointer-events-none",
+          )}
+        >
+          <ImagePlus className="h-4 w-4 shrink-0" />
+          <span>Elegir imagen</span>
+          <input
+            accept="image/*"
+            aria-label={`Elegir imagen de ${title}`}
+            className="sr-only"
+            disabled={disabled}
+            type="file"
+            onChange={handleSelection}
+          />
+        </label>
+      </div>
+
+      <p className="mt-3 hidden text-xs font-semibold text-[#0F4C81] md:block">
+        Haz clic para seleccionar una imagen
+      </p>
+      <input
+        accept="image/*"
+        aria-label={`Agregar ${title}`}
+        className="absolute inset-0 z-10 hidden h-full w-full cursor-pointer opacity-0 md:block"
+        disabled={disabled}
+        type="file"
+        onChange={handleSelection}
+      />
+    </article>
   );
 }
 
@@ -196,9 +291,9 @@ function canContinueBusinessData(data: BusinessData): boolean {
 
 function GeneralDataSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-[8px] border border-slate-200 bg-white p-4">
-      <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-500">{title}</h2>
-      <div className="grid gap-4">{children}</div>
+    <section className="min-w-0 rounded-[8px] border border-slate-200 bg-white p-3 sm:p-4">
+      <h2 className="mb-4 text-sm font-bold uppercase text-slate-500">{title}</h2>
+      <div className="grid min-w-0 gap-4">{children}</div>
     </section>
   );
 }
@@ -239,7 +334,7 @@ function GeneralDataFields({
   return (
     <div className="grid gap-5">
       <GeneralDataSection title="Datos personales">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
           <Input
             className="h-12 text-base"
             error={errors.primerNombre}
@@ -296,7 +391,7 @@ function GeneralDataFields({
       </GeneralDataSection>
 
       <GeneralDataSection title="Contacto">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
           <Input
             className="h-12 text-base"
             error={errors.telefono}
@@ -319,7 +414,7 @@ function GeneralDataFields({
       </GeneralDataSection>
 
       <GeneralDataSection title="Identificación">
-        <div className="grid gap-4">
+        <div className="grid min-w-0 gap-4">
           <Select
             className="h-12 text-base"
             error={errors.estadoNacimientoId}
@@ -332,7 +427,7 @@ function GeneralDataFields({
       </GeneralDataSection>
 
       <GeneralDataSection title="Dirección">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
           <Input
             className="h-12 text-base"
             error={errors.codigoPostal}
@@ -427,7 +522,7 @@ function FiscalIdentityFields({
     });
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid min-w-0 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
       <Input
         className="h-12 text-base"
         error={errors.rfc}
@@ -469,7 +564,7 @@ function BusinessDataFields({
   const patch = (field: keyof BusinessData, fieldValue: string) => onChange({ ...value, [field]: fieldValue });
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4">
       <Input
         className="h-12 text-base"
         helperText={!value.activity.trim() ? "Describe la actividad principal de tu negocio." : undefined}
@@ -477,7 +572,7 @@ function BusinessDataFields({
         value={value.activity}
         onChange={(event) => patch("activity", event.target.value)}
       />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <Input
           className="h-12 text-base"
           error={value.seniorityYears && Number(value.seniorityYears) < 0 ? "Ingresa cero o más años de operación." : undefined}
@@ -823,7 +918,7 @@ export function SolicitudFlowPage() {
 
   if (loading) {
     return (
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] items-center justify-center px-4">
+      <section className="mx-auto flex min-h-[calc(100dvh-3.5rem)] w-full max-w-[820px] items-center justify-center px-3 sm:min-h-[calc(100dvh-4rem)] sm:px-6">
         <div className="flex items-center gap-3 rounded-[8px] bg-white px-5 py-4 text-slate-600 shadow-sm ring-1 ring-slate-200">
           <Loader2 className="h-5 w-5 animate-spin" />
           Cargando tu solicitud
@@ -841,20 +936,20 @@ export function SolicitudFlowPage() {
       });
 
     return (
-      <section className="relative min-h-screen w-full overflow-x-hidden bg-[#F5FAFF] text-slate-950">
+      <section className="relative min-h-[100dvh] w-full overflow-x-hidden bg-[#F5FAFF] text-slate-950">
         <LandingDecor />
         <header className="relative z-10 w-full border-b border-white/80 bg-white/70 backdrop-blur">
-          <div className="mx-auto flex min-h-[88px] w-full max-w-[1240px] flex-col gap-4 px-6 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-10 lg:px-14">
+          <div className="mx-auto flex min-h-[72px] w-full max-w-[1240px] items-center justify-between gap-3 px-4 py-3 sm:min-h-[88px] sm:px-10 sm:py-4 lg:px-14">
             <button
               className="w-fit rounded-[12px] outline-none transition focus:ring-2 focus:ring-[#B8D4F0]"
               type="button"
               onClick={() => navigate("/")}
             >
-              <AlpezLogo className="h-12 sm:h-14" variant="horizontal" />
+              <AlpezLogo className="h-10 sm:h-14" variant="horizontal" />
             </button>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               <button
-                className="inline-flex h-11 items-center gap-2 rounded-[12px] px-3 text-sm font-semibold text-[#062B52] transition hover:bg-[#F3F8FD] focus:outline-none focus:ring-2 focus:ring-[#B8D4F0]"
+                className="inline-flex h-10 items-center gap-2 rounded-[12px] px-2 text-sm font-semibold text-[#062B52] transition hover:bg-[#F3F8FD] focus:outline-none focus:ring-2 focus:ring-[#B8D4F0] sm:h-11 sm:px-3"
                 type="button"
                 onClick={() => setShowLandingHelp(true)}
               >
@@ -865,20 +960,20 @@ export function SolicitudFlowPage() {
           </div>
         </header>
 
-        <main className="relative z-10 flex min-h-[calc(100vh-88px)] items-center">
-          <div className="mx-auto grid w-full max-w-[1240px] gap-11 px-6 py-8 sm:px-10 sm:py-10 lg:px-14 lg:py-12">
-            <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,660px)_minmax(340px,1fr)] xl:grid-cols-[minmax(0,690px)_minmax(380px,1fr)]">
-              <div className="max-w-[690px] text-left">
-                <h1 className="max-w-[720px] text-[clamp(2.75rem,8vw,3.75rem)] font-extrabold leading-[1.02] tracking-normal text-[#0F172A] sm:text-[clamp(3.1rem,4.7vw,5.1rem)] sm:leading-[0.99]">
+        <main className="relative z-10 flex min-h-[calc(100dvh-72px)] items-center sm:min-h-[calc(100dvh-88px)]">
+          <div className="mx-auto grid w-full max-w-[1240px] gap-8 px-4 py-6 sm:gap-10 sm:px-10 sm:py-10 lg:px-14 lg:py-12">
+            <div className="grid min-w-0 items-center gap-8 lg:grid-cols-[minmax(0,660px)_minmax(340px,1fr)] lg:gap-14 xl:grid-cols-[minmax(0,690px)_minmax(380px,1fr)]">
+              <div className="min-w-0 max-w-[690px] text-left">
+                <h1 className="max-w-[720px] text-[clamp(2.25rem,10.5vw,3rem)] font-extrabold leading-[1.04] tracking-normal text-[#0F172A] sm:text-[clamp(3.1rem,4.7vw,5.1rem)] sm:leading-[0.99]">
                   Solicita tu línea de crédito{" "}
-                  <br />
+                  <br className="hidden sm:block" />
                   <span className="text-[#0F4C81]">en minutos</span>
                 </h1>
-                <p className="mt-6 max-w-[520px] text-lg leading-8 text-[#475569]">
+                <p className="mt-5 max-w-[520px] text-base leading-7 text-[#475569] sm:mt-6 sm:text-lg sm:leading-8">
                   Completa tu información paso a paso y te guiaremos durante todo el proceso.
                 </p>
 
-                <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center">
+                <div className="mt-7 grid gap-3 sm:mt-8 sm:flex sm:flex-row sm:items-center sm:gap-4 [&>button]:w-full sm:[&>button]:w-auto">
                   <Button
                     className="h-12 rounded-[12px] bg-[#003C69] px-7 text-base shadow-[0_14px_30px_rgba(0,60,105,0.24)] hover:bg-[#062B52] focus:ring-2 focus:ring-[#B8D4F0] sm:min-w-56"
                     icon={<FileText className="h-5 w-5" />}
@@ -904,8 +999,8 @@ export function SolicitudFlowPage() {
                   </Button>
                 </div>
 
-                <p className="mt-5 flex items-center gap-2 text-sm font-medium text-[#64748B]">
-                  <Lock className="h-4 w-4 text-[#0F4C81]" />
+                <p className="mt-5 flex items-start gap-2 text-sm font-medium leading-6 text-[#64748B] sm:items-center">
+                  <Lock className="mt-1 h-4 w-4 shrink-0 text-[#0F4C81] sm:mt-0" />
                   Tus datos se usan únicamente para revisar tu solicitud.
                 </p>
               </div>
@@ -913,12 +1008,12 @@ export function SolicitudFlowPage() {
               <div className="hidden min-h-[390px] lg:block" />
             </div>
 
-            <div className="grid w-full max-w-[1080px] gap-5 lg:grid-cols-3">
+            <div className="grid w-full max-w-[1080px] gap-4 md:grid-cols-3 lg:gap-5">
               {landingBenefits.map((benefit) => {
                 const Icon = benefit.icon;
                 return (
                   <article
-                    className="flex min-h-28 items-center gap-5 rounded-[18px] border border-[#E2E8F0] bg-white/88 p-5 shadow-[0_18px_42px_rgba(15,76,129,0.1)] backdrop-blur"
+                    className="flex min-h-28 min-w-0 items-center gap-4 rounded-[18px] border border-[#E2E8F0] bg-white/88 p-4 shadow-[0_18px_42px_rgba(15,76,129,0.1)] backdrop-blur sm:gap-5 sm:p-5 md:items-start"
                     key={benefit.title}
                   >
                     <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#EAF2FB] text-[#0F4C81] ring-1 ring-[#D8E8F7]">
@@ -936,8 +1031,8 @@ export function SolicitudFlowPage() {
         </main>
 
         {showLandingHelp && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-            <div className="w-full max-w-md rounded-[18px] border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 p-0 sm:items-center sm:p-4">
+            <div className="max-h-[calc(100dvh-0.75rem)] w-full max-w-md overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-5 shadow-2xl sm:rounded-[18px] sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-bold text-slate-950">Canal de ayuda</h2>
@@ -960,9 +1055,9 @@ export function SolicitudFlowPage() {
           </div>
         )}
         {showRecoveryDialog && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-0 sm:items-center sm:p-4">
             <form
-              className="w-full max-w-md rounded-[18px] border border-slate-200 bg-white p-6 shadow-2xl"
+              className="max-h-[calc(100dvh-0.75rem)] w-full max-w-md overflow-y-auto rounded-t-[18px] border border-slate-200 bg-white p-5 shadow-2xl sm:rounded-[18px] sm:p-6"
               onSubmit={(event) => {
                 event.preventDefault();
                 void recoverSolicitud();
@@ -1086,39 +1181,27 @@ export function SolicitudFlowPage() {
           </>
         }
       >
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2">
           {[
             { key: "front", title: "Frente de la INE", file: flow.ineFront },
             { key: "back", title: "Reverso de la INE", file: flow.ineBack },
           ].map((item) => (
-            <label
-              className="relative flex min-h-44 cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[8px] border-2 border-dashed border-slate-300 bg-slate-50 p-5 text-center transition hover:border-[#0F4C81] hover:bg-[#F5FAFF]"
+            <IneUploadCard
+              disabled={saving}
+              file={item.file}
               key={item.key}
-            >
-              <FileUp className="mb-3 h-8 w-8 text-[#0F4C81]" />
-              <span className="text-base font-bold text-slate-950">{item.title}</span>
-              <span className="mt-2 text-sm text-slate-500">{item.file ? item.file.name : "Toca para agregar archivo"}</span>
-              <FilePreview file={item.file} />
-              <input
-                accept="image/*"
-                aria-label={`Agregar ${item.title}`}
-                className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
-                type="file"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  event.currentTarget.value = "";
-                  const fileError = validateSelectedFile(file, true);
-                  if (fileError) {
-                    setError(fileError);
-                    return;
-                  }
-                  void storedFileFromFile(file).then((storedFile) =>
-                    runAction(() => saveIneFile(flow.flowId, item.key as "front" | "back", storedFile)),
-                  ).catch((fileReadError) => handleFlowError(fileReadError, "No pudimos leer el archivo."));
-                }}
-              />
-            </label>
+              title={item.title}
+              onSelect={(file) => {
+                const fileError = validateSelectedFile(file, true);
+                if (fileError) {
+                  setError(fileError);
+                  return;
+                }
+                void storedFileFromFile(file).then((storedFile) =>
+                  runAction(() => saveIneFile(flow.flowId, item.key as "front" | "back", storedFile)),
+                ).catch((fileReadError) => handleFlowError(fileReadError, "No pudimos leer el archivo."));
+              }}
+            />
           ))}
         </div>
       </QuestionScreen>
@@ -1156,8 +1239,8 @@ export function SolicitudFlowPage() {
       >
         <div className="grid gap-3">
           {["La foto no está borrosa", "El texto se puede leer", "La identificación aparece completa"].map((item) => (
-            <div className="flex items-center gap-3 rounded-[8px] bg-slate-50 p-4 text-slate-700" key={item}>
-              <Check className="h-5 w-5 text-emerald-600" />
+            <div className="flex items-center gap-3 rounded-[8px] bg-slate-50 p-3 text-sm text-slate-700 sm:p-4 sm:text-base" key={item}>
+              <Check className="h-5 w-5 shrink-0 text-emerald-600" />
               <span>{item}</span>
             </div>
           ))}
@@ -1396,7 +1479,7 @@ export function SolicitudFlowPage() {
       const hasFile = Boolean(document.file);
 
       return (
-        <div className="rounded-[8px] border border-slate-200 bg-white p-4" key={document.id}>
+        <div className="min-w-0 rounded-[8px] border border-slate-200 bg-white p-3 sm:p-4" key={document.id}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -1408,7 +1491,7 @@ export function SolicitudFlowPage() {
               {document.file && <p className="mt-1 truncate text-sm text-slate-500">{document.file.name}</p>}
               <FilePreview file={document.file} />
             </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end [&>*]:w-full sm:[&>*]:w-auto">
               {hasFile && (
                 <Button
                   icon={<Eye className="h-4 w-4" />}
@@ -1420,7 +1503,7 @@ export function SolicitudFlowPage() {
                   Ver archivo
                 </Button>
               )}
-              <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 sm:h-8">
                 {hasFile ? <RefreshCw className="h-4 w-4" /> : <FileUp className="h-4 w-4" />}
                 {hasFile ? "Cambiar" : "Agregar"}
                 <input
@@ -1458,7 +1541,7 @@ export function SolicitudFlowPage() {
       const canChangeIne = Boolean(flow.ineFront || flow.ineBack) && !document.backendDocumentId;
 
       return (
-        <div className="rounded-[8px] border border-slate-200 bg-white p-4" key={document.id}>
+        <div className="min-w-0 rounded-[8px] border border-slate-200 bg-white p-3 sm:p-4" key={document.id}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -1481,7 +1564,7 @@ export function SolicitudFlowPage() {
                 <p className="mt-2 text-sm text-slate-500">Necesitamos frente y reverso para continuar la revisión.</p>
               )}
             </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end [&>*]:w-full sm:[&>*]:w-auto">
               {hasIne && inePreviewFile?.previewUrl && (
                 <Button
                   icon={<Eye className="h-4 w-4" />}
@@ -1511,7 +1594,7 @@ export function SolicitudFlowPage() {
     };
     const renderSection = (title: string, description: string, documents: SolicitudDocument[]) =>
       documents.length > 0 ? (
-        <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+        <section className="min-w-0 rounded-[8px] border border-slate-200 bg-slate-50 p-3 sm:p-4">
           <div className="mb-4">
             <h2 className="text-lg font-bold text-slate-950">{title}</h2>
             <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p>
@@ -1526,14 +1609,14 @@ export function SolicitudFlowPage() {
         </section>
       ) : null;
     const renderChoice = (value: boolean | undefined, onSelect: (value: boolean) => void) => (
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
         {[
           { label: "Sí", value: true },
           { label: "No / aún no", value: false },
         ].map((choice) => (
           <button
             className={cx(
-              "min-h-12 rounded-[8px] border px-4 text-base font-bold transition",
+              "min-h-11 rounded-[8px] border px-3 text-sm font-bold transition sm:min-h-12 sm:px-4 sm:text-base",
               value === choice.value
                 ? "border-[#0F4C81] bg-[#F5FAFF] text-[#0F4C81] ring-2 ring-[#E6F0FA]"
                 : "border-slate-200 bg-white text-slate-800 hover:border-[#0F4C81]",
@@ -1577,7 +1660,7 @@ export function SolicitudFlowPage() {
           </>
         }
       >
-        <div className="mb-5 grid gap-3 rounded-[8px] bg-slate-50 p-4 text-sm font-semibold text-slate-600 sm:grid-cols-2">
+        <div className="mb-5 grid gap-2 rounded-[8px] bg-slate-50 p-3 text-sm font-semibold text-slate-600 sm:grid-cols-2 sm:gap-3 sm:p-4">
           <div>Documentos agregados: {counts.added}</div>
           <div>Pendientes por completar: {counts.pending}</div>
         </div>
@@ -1591,11 +1674,11 @@ export function SolicitudFlowPage() {
               "Agrega los documentos principales para revisar tu solicitud.",
               holderDocuments,
             )}
-            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+            <section className="min-w-0 rounded-[8px] border border-slate-200 bg-slate-50 p-3 sm:p-4">
               <div className="mb-4">
                 <h2 className="text-lg font-bold text-slate-950">Aval</h2>
               </div>
-              <div className="rounded-[8px] bg-white p-4">
+              <div className="rounded-[8px] bg-white p-3 sm:p-4">
                 <p className="mb-3 font-bold text-slate-950">¿Tu solicitud contará con aval?</p>
                 {renderChoice(flow.hasGuarantor, (value) =>
                   runAction(() => setGuarantorChoice(flow.flowId, value)),
@@ -1608,11 +1691,11 @@ export function SolicitudFlowPage() {
                 )}
               </div>
             </section>
-            <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+            <section className="min-w-0 rounded-[8px] border border-slate-200 bg-slate-50 p-3 sm:p-4">
               <div className="mb-4">
                 <h2 className="text-lg font-bold text-slate-950">Garantía</h2>
               </div>
-              <div className="rounded-[8px] bg-white p-4">
+              <div className="rounded-[8px] bg-white p-3 sm:p-4">
                 <p className="mb-3 font-bold text-slate-950">¿Cuentas con una garantía para esta solicitud?</p>
                 {renderChoice(flow.hasCollateral, (value) =>
                   runAction(() => setCollateralChoice(flow.flowId, value)),
@@ -1627,9 +1710,9 @@ export function SolicitudFlowPage() {
             </section>
           </div>
           {previewFile && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
-              <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-[14px] bg-white shadow-2xl">
-                <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/60 p-0 sm:items-center sm:p-4">
+              <div className="flex max-h-[calc(100dvh-0.5rem)] w-full max-w-4xl flex-col rounded-t-[14px] bg-white shadow-2xl sm:max-h-[90dvh] sm:rounded-[14px]">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:gap-4 sm:px-5 sm:py-4">
                   <div className="min-w-0">
                     <h2 className="truncate text-base font-bold text-slate-950">{previewFile.name}</h2>
                     <p className="text-xs text-slate-500">Vista previa del archivo cargado</p>
@@ -1638,17 +1721,17 @@ export function SolicitudFlowPage() {
                     Cerrar
                   </Button>
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-4">
+                <div className="min-h-0 flex-1 overflow-auto bg-slate-50 p-3 sm:p-4">
                   {isImageFile(previewFile) && (
                     <img
                       alt={previewFile.name}
-                      className="mx-auto max-h-[72vh] max-w-full rounded-[8px] object-contain"
+                      className="mx-auto max-h-[75dvh] max-w-full rounded-[8px] object-contain sm:max-h-[72dvh]"
                       src={previewFile.previewUrl}
                     />
                   )}
                   {!isImageFile(previewFile) && previewFile.previewUrl && (
                     <iframe
-                      className="h-[72vh] w-full rounded-[8px] border border-slate-200 bg-white"
+                      className="h-[75dvh] w-full rounded-[8px] border border-slate-200 bg-white sm:h-[72dvh]"
                       src={previewFile.previewUrl}
                       title={previewFile.name}
                     />
@@ -1735,7 +1818,7 @@ export function SolicitudFlowPage() {
         }
       >
         {!hasValidPhone ? (
-          <div className="rounded-[8px] bg-amber-50 p-5 text-amber-800">
+          <div className="rounded-[8px] bg-amber-50 p-4 text-amber-800 sm:p-5">
             <p className="font-bold">Necesitamos tu número celular para enviarte el código.</p>
             <Button
               className="mt-4"
@@ -1749,7 +1832,7 @@ export function SolicitudFlowPage() {
           </div>
         ) : (
           <div className="grid gap-5">
-            <div className="rounded-[8px] bg-[#F5FAFF] p-4 text-base leading-7 text-slate-700">
+            <div className="rounded-[8px] bg-[#F5FAFF] p-3 text-sm leading-6 text-slate-700 sm:p-4 sm:text-base sm:leading-7">
               <p>El código se enviará al número que capturaste en tus datos personales.</p>
               <p className="mt-2 font-bold text-slate-950">
                 Enviaremos el código al número terminado en ...{phoneEnding}
@@ -1774,10 +1857,10 @@ export function SolicitudFlowPage() {
                 <label className="block">
                   <span className="mb-2 block text-sm font-bold text-slate-700">Código de verificación</span>
                   <input
-                    className="h-14 w-full rounded-[10px] border border-slate-200 bg-white px-4 text-center text-2xl font-bold tracking-[0.35em] text-slate-950 outline-none transition placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:border-[#0F4C81] focus:ring-2 focus:ring-[#E6F0FA]"
+                    className="h-14 w-full rounded-[10px] border border-slate-200 bg-white px-3 text-center text-xl font-bold text-slate-950 outline-none transition placeholder:text-sm placeholder:font-normal placeholder:text-slate-400 focus:border-[#0F4C81] focus:ring-2 focus:ring-[#E6F0FA] sm:px-4 sm:text-2xl sm:placeholder:text-base"
                     inputMode="numeric"
                     maxLength={6}
-                    placeholder="Ingresa el código de 6 dígitos"
+                    placeholder="Código de 6 dígitos"
                     value={otpCode}
                     onChange={(event) => {
                       setError(null);
@@ -1872,7 +1955,7 @@ export function SolicitudFlowPage() {
           </>
         }
       >
-        <label className="flex cursor-pointer gap-4 rounded-[8px] border border-slate-200 p-4 transition hover:border-[#0F4C81]">
+        <label className="flex cursor-pointer gap-3 rounded-[8px] border border-slate-200 p-3 transition hover:border-[#0F4C81] sm:gap-4 sm:p-4">
           <input
             checked={flow.authorizationAccepted}
             className="mt-1 h-5 w-5 rounded border-slate-300 text-[#0F4C81] focus:ring-[#E6F0FA]"
@@ -1882,7 +1965,7 @@ export function SolicitudFlowPage() {
               setFlow({ ...flow, authorizationAccepted: event.target.checked });
             }}
           />
-          <span className="text-base leading-7 text-slate-700">
+          <span className="min-w-0 text-sm leading-6 text-slate-700 sm:text-base sm:leading-7">
             Autorizo que mi información sea revisada para continuar con la evaluación de mi solicitud.
           </span>
         </label>
@@ -1913,17 +1996,17 @@ export function SolicitudFlowPage() {
           {processingMessages.map((message, index) => (
             <div
               className={cx(
-                "flex items-center gap-3 rounded-[8px] p-4 text-sm font-semibold transition",
+                "flex items-center gap-3 rounded-[8px] p-3 text-sm font-semibold transition sm:p-4",
                 index <= displayedProcessingIndex ? "bg-[#F5FAFF] text-[#0F4C81]" : "bg-slate-50 text-slate-400",
               )}
               key={message}
             >
               {processingFeedback && index === displayedProcessingIndex ? (
-                <CircleAlert className="h-5 w-5 text-amber-600" />
+                <CircleAlert className="h-5 w-5 shrink-0 text-amber-600" />
               ) : index < displayedProcessingIndex ? (
-                <Check className="h-5 w-5 text-emerald-600" />
+                <Check className="h-5 w-5 shrink-0 text-emerald-600" />
               ) : index === displayedProcessingIndex ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
               ) : (
                 <span className="h-5 w-5 rounded-full border border-slate-300" />
               )}
@@ -1934,7 +2017,7 @@ export function SolicitudFlowPage() {
         {processingFeedback && (
           <div
             className={cx(
-              "mt-5 rounded-[8px] border p-5",
+              "mt-5 rounded-[8px] border p-4 sm:p-5",
               hasCorrectionIssues
                 ? "border-red-200 bg-red-50"
                 : "border-amber-200 bg-amber-50",
@@ -1966,7 +2049,7 @@ export function SolicitudFlowPage() {
                     </li>
                   ))}
                 </ul>
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <div className="mt-4 grid gap-2 sm:flex sm:flex-row sm:flex-wrap [&>button]:w-full sm:[&>button]:w-auto">
                   {correctionSteps.map((issue) => (
                     <Button
                       key={issue.step}

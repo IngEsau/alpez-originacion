@@ -34,9 +34,9 @@ export function SolicitudSuccessPage() {
 
   if (loading) {
     return (
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
+      <section className="mx-auto flex min-h-[calc(100dvh-3.5rem)] w-full max-w-[820px] flex-col justify-start px-3 py-5 sm:min-h-[calc(100dvh-4rem)] sm:px-6 sm:py-8 md:justify-center lg:py-10">
         <ProgressBar current={11} total={11} />
-        <div className="rounded-[8px] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
+        <div className="rounded-[8px] bg-white p-5 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
           <p className="font-semibold text-slate-600">Cargando resultado</p>
         </div>
       </section>
@@ -45,13 +45,13 @@ export function SolicitudSuccessPage() {
 
   if (!flow) {
     return (
-      <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
-        <div className="rounded-[8px] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
-          <h1 className="text-3xl font-bold text-slate-950">No encontramos tu solicitud</h1>
+      <section className="mx-auto flex min-h-[calc(100dvh-3.5rem)] w-full max-w-[820px] flex-col justify-start px-3 py-5 sm:min-h-[calc(100dvh-4rem)] sm:px-6 sm:py-8 md:justify-center lg:py-10">
+        <div className="rounded-[8px] bg-white p-5 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
+          <h1 className="break-words text-[1.75rem] font-bold leading-tight text-slate-950 sm:text-3xl">No encontramos tu solicitud</h1>
           <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-600">
             El folio puede haber vencido. Puedes volver al inicio y generar una nueva solicitud.
           </p>
-          <Button className="mt-6" icon={<ArrowLeft className="h-4 w-4" />} type="button" variant="outline" onClick={() => navigate("/")}>
+          <Button className="mt-6 w-full sm:w-auto" icon={<ArrowLeft className="h-4 w-4" />} type="button" variant="outline" onClick={() => navigate("/")}>
             Volver al inicio
           </Button>
         </div>
@@ -69,9 +69,9 @@ export function SolicitudSuccessPage() {
     : "Agradecemos el tiempo que dedicaste al proceso.";
 
   return (
-    <section className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[760px] flex-col justify-center px-4 py-10 sm:px-6">
+    <section className="mx-auto flex min-h-[calc(100dvh-3.5rem)] w-full max-w-[820px] flex-col justify-start px-3 py-5 sm:min-h-[calc(100dvh-4rem)] sm:px-6 sm:py-8 md:justify-center lg:py-10">
       <ProgressBar current={11} total={11} />
-      <div className="rounded-[8px] bg-white p-6 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
+      <div className="min-w-0 rounded-[8px] bg-white p-5 text-center shadow-sm ring-1 ring-slate-200 sm:p-10">
         <div
           className={`mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full ${
             approved ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"
@@ -79,7 +79,7 @@ export function SolicitudSuccessPage() {
         >
           <span className="text-3xl font-bold">{approved ? "✓" : "i"}</span>
         </div>
-        <h1 className="text-3xl font-bold text-slate-950 sm:text-4xl">{title}</h1>
+        <h1 className="break-words text-[1.75rem] font-bold leading-tight text-slate-950 sm:text-4xl">{title}</h1>
         <p className="mx-auto mt-4 max-w-xl text-base leading-7 text-slate-600">{mainMessage}</p>
 
         {secondaryMessage && <p className="mx-auto mt-6 max-w-xl text-sm font-semibold text-slate-500">{secondaryMessage}</p>}
@@ -87,16 +87,16 @@ export function SolicitudSuccessPage() {
         {(flow.folio || flow.submittedAt) && (
           <div className="mx-auto mt-8 grid max-w-md gap-3 rounded-[8px] bg-slate-50 p-4 text-left">
             {flow.folio && (
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <span className="text-sm text-slate-500">Folio</span>
-                <span className="font-bold text-slate-950">{flow.folio}</span>
+                <span className="break-all font-bold text-slate-950">{flow.folio}</span>
               </div>
             )}
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <span className="text-sm text-slate-500">Fecha de envío</span>
               <span className="font-bold text-slate-950">{formatDate(flow.submittedAt)}</span>
             </div>
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <span className="text-sm text-slate-500">Estado</span>
               <span className={`rounded-full px-3 py-1 text-sm font-bold ${approved ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
                 {approved ? "En revisión" : "Finalizada"}
@@ -106,7 +106,7 @@ export function SolicitudSuccessPage() {
         )}
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <Button icon={<ArrowLeft className="h-4 w-4" />} type="button" variant="outline" onClick={() => navigate("/")}>
+          <Button className="w-full sm:w-auto" icon={<ArrowLeft className="h-4 w-4" />} type="button" variant="outline" onClick={() => navigate("/")}>
             Volver al inicio
           </Button>
         </div>
