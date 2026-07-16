@@ -1,0 +1,82 @@
+name: Publicar frontend en deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alpez-frontend-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Validar, compilar y publicar
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://dev.alpez.lercomx.com/web' }}
+      VITE_USE_REAL_API: ${{ vars.VITE_USE_REAL_API || 'true' }}
+      VITE_API_FALLBACK_TO_MOCK: ${{ vars.VITE_API_FALLBACK_TO_MOCK || 'false' }}
+      VITE_DEMO_MODE: ${{ vars.VITE_DEMO_MODE || 'false' }}
+
+    steps:
+      - name: Descargar codigo fuente
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Validar TypeScript
+        run: npm run typecheck
+
+      - name: Ejecutar pruebas
+        run: npm test -- --run
+
+      - name: Generar build de produccion
+        run: npm run build
+
+      - name: Publicar contenido de dist en deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin deploy >/dev/null 2>&1; then
+            git fetch origin deploy
+            git worktree add --detach deploy-worktree origin/deploy
+          else
+            git worktree add --detach deploy-worktree
+            (
+              cd deploy-worktree
+              git checkout --orphan deploy
+              git rm -rf .
+            )
+          fi
+
+          find deploy-worktree -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a dist/. deploy-worktree/
+
+          cd deploy-worktree
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "El build no genero cambios para publicar."
+            exit 0
+          fi
+
+          git commit -m "Publica frontend de ${GITHUB_SHA::7}"
+          git push origin HEAD:deploy
